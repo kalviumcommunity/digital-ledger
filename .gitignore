@@ -1,0 +1,52 @@
+# ========================
+# Dependencies
+# ========================
+node_modules/
+*/node_modules/
+
+# ========================
+# Environment Files (Secrets)
+# ========================
+.env
+.env.local
+.env.*.local
+*.env
+backend/.env
+frontend/.env
+
+# ========================
+# Production & Build Outputs
+# ========================
+dist/
+build/
+backend/dist/
+frontend/dist/
+
+# ========================
+# Logs & Runtime Data
+# ========================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ========================
+# OS & IDE Files
+# ========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ========================
+# Prisma & Tool Specifics
+# ========================
+backend/prisma/*.db
+backend/prisma/*.db-journal
+skills-lock.json
+.claude/
+.windsurf/
+.agents/
