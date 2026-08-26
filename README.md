@@ -14,7 +14,7 @@ The system is organized into three distinct feature modules:
 
 ---
 
-## Features Implemented (Person 3 Scope)
+## Features Implemented
 
 ### 1. Customer Ledger View (`/customers/[id]`)
 * Displays customer details alongside a quick **Back to Customers** navigation link[cite: 1].
