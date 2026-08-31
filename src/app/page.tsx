@@ -1,69 +1,144 @@
-import Image from "next/image";
+'use client';
 
-export default function Home() {
+import React, { useState } from 'react';
+import DashboardHeader from '@/components/dashboard/DashboardHeader';
+import BalanceCard from '@/components/dashboard/BalanceCard';
+import CreditGivenCard from '@/components/dashboard/CreditGivenCard';
+import CustomerPanel from '@/components/dashboard/CustomerPanel';
+import TransactionHistory from '@/components/dashboard/TransactionHistory';
+import AddTransactionModal from '@/components/dashboard/AddTransactionModal';
+import EditTransactionModal from '@/components/dashboard/EditTransactionModal';
+import DeleteConfirmModal from '@/components/dashboard/DeleteConfirmModal';
+import {
+  MOCK_SUMMARY,
+  MOCK_CUSTOMERS,
+  MOCK_TRANSACTIONS,
+} from '@/app/dashboard/mockData';
+import type {
+  DashboardTransaction,
+  AddTransactionPayload,
+} from '@/app/dashboard/types';
+
+export default function DashboardPage() {
+  const [transactions, setTransactions] =
+    useState<DashboardTransaction[]>(MOCK_TRANSACTIONS);
+  const [summary] = useState(MOCK_SUMMARY);
+  const [headerSearch, setHeaderSearch] = useState('');
+
+  // Modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [selectedTx, setSelectedTx] = useState<DashboardTransaction | null>(null);
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  const handleAddSubmit = (payload: AddTransactionPayload) => {
+    const customer = MOCK_CUSTOMERS.find((c) => c.id === payload.customerId);
+    if (!customer) return;
+    const newTx: DashboardTransaction = {
+      id: `txn-${Date.now()}`,
+      customerId: payload.customerId,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      type: payload.type,
+      amount: payload.amount,
+      paymentMethod: payload.paymentMethod,
+      description: payload.description,
+      createdAt: payload.date,
+    };
+    setTransactions((prev) => [newTx, ...prev]);
+  };
+
+  const handleEditSubmit = (id: string, updates: Partial<DashboardTransaction>) => {
+    setTransactions((prev) =>
+      prev.map((tx) => (tx.id === id ? { ...tx, ...updates } : tx))
+    );
+  };
+
+  const handleDeleteConfirm = (id: string) => {
+    setTransactions((prev) => prev.filter((tx) => tx.id !== id));
+  };
+
+  const openEdit = (tx: DashboardTransaction) => {
+    setSelectedTx(tx);
+    setShowEditModal(true);
+  };
+
+  const openDelete = (tx: DashboardTransaction) => {
+    setSelectedTx(tx);
+    setShowDeleteModal(true);
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+    <div className="flex flex-col bg-white min-h-screen">
+      {/* Header */}
+      <DashboardHeader
+        searchQuery={headerSearch}
+        onSearchChange={setHeaderSearch}
+      />
+
+      {/* Main content */}
+      <main className="flex-1 p-3 lg:p-4 bg-white overflow-hidden">
+        <div
+          className="flex gap-4 w-full mx-auto"
+          style={{ height: 'calc(100vh - 84px)' }}
+        >
+          {/* ── LEFT COLUMN ────────────────────────────────────────────────── */}
+          <div className="w-[410px] shrink-0 flex flex-col gap-3 h-full">
+            {/* Balance + Credit Given cards */}
+            <div className="flex gap-3 shrink-0">
+              <BalanceCard balance={summary.balance} />
+              <CreditGivenCard creditGiven={summary.creditGiven} />
+            </div>
+
+            {/* Customer panel — fills remaining height */}
+            <div className="flex-1 min-h-0">
+              <CustomerPanel customers={MOCK_CUSTOMERS} />
+            </div>
+          </div>
+
+          {/* ── RIGHT COLUMN ───────────────────────────────────────────────── */}
+          <div className="flex-1 min-w-0 h-full">
+            <TransactionHistory
+              transactions={transactions}
+              initialSearch={headerSearch}
+              onAddTransaction={() => setShowAddModal(true)}
+              onEditTransaction={openEdit}
+              onDeleteTransaction={openDelete}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          </div>
         </div>
       </main>
+
+      {/* Modals */}
+      <AddTransactionModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSubmit={handleAddSubmit}
+      />
+
+      <EditTransactionModal
+        isOpen={showEditModal}
+        transaction={selectedTx}
+        onClose={() => {
+          setShowEditModal(false);
+          setSelectedTx(null);
+        }}
+        onSubmit={handleEditSubmit}
+      />
+
+      <DeleteConfirmModal
+        isOpen={showDeleteModal}
+        transaction={selectedTx}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setSelectedTx(null);
+        }}
+        onConfirm={handleDeleteConfirm}
+      />
     </div>
   );
 }
