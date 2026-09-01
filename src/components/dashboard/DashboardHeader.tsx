@@ -6,11 +6,15 @@ import { Search, Moon, Settings } from 'lucide-react';
 interface DashboardHeaderProps {
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  filterType?: 'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN';
+  onFilterChange?: (t: 'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN') => void;
 }
 
 export default function DashboardHeader({
   searchQuery,
   onSearchChange,
+  filterType = 'ALL',
+  onFilterChange,
 }: DashboardHeaderProps) {
   const [filterOpen, setFilterOpen] = useState(false);
 
@@ -58,14 +62,25 @@ export default function DashboardHeader({
             {filterOpen && (
               <div className="absolute right-0 top-9 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-2 w-44">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 px-2 py-1">Filter by type</p>
-                {['All', 'Payment Received', 'Credit Given'].map((t) => (
+                {[
+                  { value: 'ALL', label: 'All' },
+                  { value: 'PAYMENT_RECEIVED', label: 'Payment Received' },
+                  { value: 'CREDIT_GIVEN', label: 'Credit Given' },
+                ].map((item) => (
                   <button
-                    key={t}
+                    key={item.value}
                     type="button"
-                    onClick={() => setFilterOpen(false)}
-                    className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 rounded-lg"
+                    onClick={() => {
+                      onFilterChange?.(item.value as 'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN');
+                      setFilterOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-1.5 text-xs rounded-lg transition ${
+                      filterType === item.value
+                        ? 'bg-gray-100 font-bold text-gray-900'
+                        : 'text-gray-700 hover:bg-gray-50'
+                    }`}
                   >
-                    {t}
+                    {item.label}
                   </button>
                 ))}
               </div>

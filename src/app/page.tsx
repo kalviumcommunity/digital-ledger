@@ -24,6 +24,7 @@ export default function DashboardPage() {
     useState<DashboardTransaction[]>(MOCK_TRANSACTIONS);
   const [summary] = useState(MOCK_SUMMARY);
   const [headerSearch, setHeaderSearch] = useState('');
+  const [headerFilter, setHeaderFilter] = useState<'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN'>('ALL');
 
   // Modal state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -78,6 +79,8 @@ export default function DashboardPage() {
       <DashboardHeader
         searchQuery={headerSearch}
         onSearchChange={setHeaderSearch}
+        filterType={headerFilter}
+        onFilterChange={setHeaderFilter}
       />
 
       {/* Main content */}
@@ -105,6 +108,8 @@ export default function DashboardPage() {
             <TransactionHistory
               transactions={transactions}
               initialSearch={headerSearch}
+              filterType={headerFilter}
+              onFilterChange={setHeaderFilter}
               onAddTransaction={() => setShowAddModal(true)}
               onEditTransaction={openEdit}
               onDeleteTransaction={openDelete}

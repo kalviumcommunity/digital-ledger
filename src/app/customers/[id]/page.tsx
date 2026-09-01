@@ -2,16 +2,16 @@
 
 import React, { useState, use } from 'react';
 import Link from 'next/link';
-import {
-  ArrowLeft, Plus, Bell, Trash2,
+import { 
+  ArrowLeft, Plus, Bell, Edit2, FileText, History, Trash2, 
+  ArrowUpRight, ArrowDownLeft, Wallet, ReceiptText 
 } from 'lucide-react';
-import {
-  AddTransactionModal,
-  EditTransactionModal,
-  AuditTrailModal,
-  SendNoticeModal,
+import { 
+  AddTransactionModal, 
+  EditTransactionModal, 
+  AuditTrailModal, 
+  SendNoticeModal 
 } from '@/components/LedgerModals';
-import { MOCK_CUSTOMERS, formatNumber } from '@/app/dashboard/mockData';
 
 export interface AuditLog {
   id: string;
@@ -36,7 +36,11 @@ export interface Transaction {
 }
 
 export interface CustomerLedgerData {
-  customer: { id: string; name: string; phone: string };
+  customer: {
+    id: string;
+    name: string;
+    phone: string;
+  };
   summary: {
     totalCredit: string;
     totalPaid: string;
@@ -47,54 +51,96 @@ export interface CustomerLedgerData {
 }
 
 const INITIAL_MOCK_DATA: CustomerLedgerData = {
-  customer: { id: '1', name: 'Alisha Thakur', phone: '9356xxxxxxx' },
+  customer: {
+    id: '1',
+    name: 'Alisha Thakur',
+    phone: '9356xxxxxx',
+  },
   summary: {
     totalCredit: '13,445.23',
     totalPaid: '10,400.00',
     amountDue: '3,045.23',
-    transactionCount: 7,
+    transactionCount: 5,
   },
   transactions: [
     {
-      id: '101', type: 'PAYMENT_RECEIVED', amount: '2400.00', method: 'UPI',
-      description: 'Payment Received', createdAt: '2026-08-08T12:13:00Z', version: 1,
-      auditLogs: [{ id: 'a1', action: 'CREATED', userId: 'Shopkeeper', timestamp: '2026-08-08T12:13:00Z', newValue: { amount: '2400.00', type: 'PAYMENT_RECEIVED', method: 'UPI' } }],
-    },
-    {
-      id: '102', type: 'PAYMENT_RECEIVED', amount: '3000.00', method: 'Cash',
-      description: 'Cash Received', createdAt: '2026-08-01T10:03:00Z', version: 1, auditLogs: [],
-    },
-    {
-      id: '103', type: 'CREDIT_GIVEN', amount: '2800.00', method: 'Cash',
-      description: 'Goods Purchased', createdAt: '2026-07-28T08:37:00Z', version: 1, auditLogs: [],
-    },
-    {
-      id: '104', type: 'PAYMENT_RECEIVED', amount: '5000.00', method: 'Cash',
-      description: 'Cash Received', createdAt: '2026-07-20T10:03:00Z', version: 1, auditLogs: [],
-    },
-    {
-      id: '105', type: 'CREDIT_GIVEN', amount: '8645.23', method: 'Cash',
-      description: 'Goods Purchased', createdAt: '2026-07-18T10:03:00Z', version: 2,
-      lockedBy: 'Employee 1', lockedAt: new Date().toISOString(),
+      id: '101',
+      type: 'PAYMENT_RECEIVED',
+      amount: '2400.00',
+      method: 'UPI',
+      description: 'Payment Received',
+      createdAt: '2026-08-08T12:13:00Z',
+      version: 1,
       auditLogs: [
-        { id: 'a2', action: 'CREATED', userId: 'Shopkeeper', timestamp: '2026-07-18T10:03:00Z', newValue: { amount: '8000.00', type: 'CREDIT_GIVEN', method: 'Cash' } },
-        { id: 'a3', action: 'EDITED', userId: 'Employee 1', timestamp: '2026-07-18T10:15:00Z', oldValue: { amount: '8000.00' }, newValue: { amount: '8645.23' } },
+        {
+          id: 'a1',
+          action: 'CREATED',
+          userId: 'Shopkeeper',
+          timestamp: '2026-08-08T12:13:00Z',
+          newValue: { amount: '2400.00', type: 'PAYMENT_RECEIVED', method: 'UPI' },
+        },
+      ],
+    },
+    {
+      id: '102',
+      type: 'PAYMENT_RECEIVED',
+      amount: '3000.00',
+      method: 'Cash',
+      description: 'Cash Received',
+      createdAt: '2026-08-01T10:03:00Z',
+      version: 1,
+      auditLogs: [],
+    },
+    {
+      id: '103',
+      type: 'CREDIT_GIVEN',
+      amount: '2800.00',
+      method: 'Cash',
+      description: 'Goods Purchased',
+      createdAt: '2026-07-28T08:37:00Z',
+      version: 1,
+      auditLogs: [],
+    },
+    {
+      id: '104',
+      type: 'PAYMENT_RECEIVED',
+      amount: '5000.00',
+      method: 'Cash',
+      description: 'Cash Received',
+      createdAt: '2026-07-20T10:03:00Z',
+      version: 1,
+      auditLogs: [],
+    },
+    {
+      id: '105',
+      type: 'CREDIT_GIVEN',
+      amount: '8645.23',
+      method: 'Cash',
+      description: 'Goods Purchased',
+      createdAt: '2026-07-18T10:03:00Z',
+      version: 2,
+      lockedBy: 'Employee 1',
+      lockedAt: new Date().toISOString(),
+      auditLogs: [
+        {
+          id: 'a2',
+          action: 'CREATED',
+          userId: 'Shopkeeper',
+          timestamp: '2026-07-18T10:03:00Z',
+          newValue: { amount: '8000.00', type: 'CREDIT_GIVEN', method: 'Cash' },
+        },
+        {
+          id: 'a3',
+          action: 'EDITED',
+          userId: 'Employee 1',
+          timestamp: '2026-07-18T10:15:00Z',
+          oldValue: { amount: '8000.00' },
+          newValue: { amount: '8645.23' },
+        },
       ],
     },
   ],
 };
-
-function formatTxDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
-  });
-}
-
-function formatAmount(amount: string | number): string {
-  const n = Number(amount);
-  return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 
 export default function CustomerLedgerPage({
   params,
@@ -102,21 +148,14 @@ export default function CustomerLedgerPage({
   params: Promise<{ id: string }> | { id: string };
 }) {
   const resolvedParams = params instanceof Promise ? use(params) : params;
-  const customerId = resolvedParams?.id || '2';
-  const customerInfo = MOCK_CUSTOMERS.find((c) => c.id === customerId) || MOCK_CUSTOMERS[1];
-
-  const [data, setData] = useState<CustomerLedgerData>(() => ({
+  
+  const [data, setData] = useState<CustomerLedgerData>({
     ...INITIAL_MOCK_DATA,
     customer: {
-      id: customerInfo.id,
-      name: customerInfo.name,
-      phone: customerInfo.phone,
+      ...INITIAL_MOCK_DATA.customer,
+      id: resolvedParams?.id || '1',
     },
-    summary: {
-      ...INITIAL_MOCK_DATA.summary,
-      amountDue: formatNumber(customerInfo.amountDue),
-    },
-  }));
+  });
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -125,7 +164,7 @@ export default function CustomerLedgerPage({
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
   const handleDelete = (txId: string) => {
-    if (confirm('Delete this transaction?')) {
+    if (confirm('Are you sure you want to delete this transaction?')) {
       setData((prev) => ({
         ...prev,
         transactions: prev.transactions.filter((t) => t.id !== txId),
@@ -134,159 +173,230 @@ export default function CustomerLedgerPage({
   };
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Back link */}
-      <div className="px-6 py-3 border-b border-gray-200">
+    <div className="min-h-screen bg-slate-50/60 py-8 px-4 sm:px-6 lg:px-8 font-sans antialiased text-slate-800">
+      <main className="max-w-5xl mx-auto space-y-6">
+        
+        {/* Back navigation */}
         <Link
           href="/customers"
-          className="inline-flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-900 transition"
+          className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-900 transition-colors"
         >
-          <ArrowLeft size={13} />
-          Back to customers
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to Customers
         </Link>
-      </div>
 
-      <main className="px-6 py-4 max-w-5xl">
-        {/* Customer header */}
-        <div className="flex items-center justify-between mb-5">
+        {/* Customer Header Bar */}
+        <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-gray-300 shrink-0" />
+            <div className="w-14 h-14 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-bold text-xl shadow-inner">
+              {data.customer.name.charAt(0)}
+            </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">{data.customer.name}</h1>
-              <p className="text-sm text-gray-500 mt-0.5">{data.customer.phone}</p>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                  {data.customer.name}
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                  Customer
+                </span>
+              </div>
+              <p className="text-xs font-mono text-slate-500 mt-1">{data.customer.phone}</p>
             </div>
           </div>
+
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 h-10 px-4 border border-gray-900 rounded-lg text-sm font-medium text-gray-900 hover:bg-gray-50 transition"
+              className="inline-flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95 shadow-sm"
             >
-              <Plus size={15} />
-              Add Transaction
+              <Plus className="w-4 h-4" /> Add Transaction
             </button>
             <button
               type="button"
               onClick={() => setShowNoticeModal(true)}
-              className="flex items-center gap-2 h-10 px-4 border border-gray-900 rounded-lg text-sm font-medium text-gray-900 hover:bg-gray-50 transition"
+              className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95 shadow-sm"
             >
-              <Bell size={15} />
-              Send Notice
+              <Bell className="w-4 h-4 text-amber-500" /> Send Notice
             </button>
           </div>
         </div>
 
-        {/* Stat cards */}
-        <div className="grid grid-cols-4 gap-3 mb-5">
-          {[
-            { label: 'Total Credit', value: data.summary.totalCredit, color: 'text-gray-900' },
-            { label: 'Total Paid', value: data.summary.totalPaid, color: 'text-green-600' },
-            { label: 'Amount Due', value: data.summary.amountDue, color: 'text-red-600' },
-            { label: 'Transactions', value: String(data.summary.transactionCount), color: 'text-gray-900' },
-          ].map((card) => (
-            <div key={card.label} className="border border-gray-300 rounded-lg px-4 py-3 text-center">
-              <p className="text-xs text-gray-600 font-medium mb-1">{card.label}</p>
-              <p className={`text-lg font-bold tabular-nums ${card.color}`}>{card.value}</p>
+        {/* 4 Summary Stat Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow transition">
+            <div className="flex items-center justify-between text-slate-400 mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total Credit</span>
+              <div className="w-7 h-7 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600">
+                <ArrowDownLeft className="w-4 h-4" />
+              </div>
             </div>
-          ))}
-        </div>
-
-        {/* Transaction table */}
-        <div className="border border-gray-300 rounded-lg overflow-hidden">
-          {/* Table header */}
-          <div className="grid grid-cols-[180px_100px_1fr_100px_180px] border-b border-gray-200 bg-white px-4 py-3">
-            {['Date & Time', 'Type', 'Description', 'Amount', 'Actions'].map((h) => (
-              <span key={h} className="text-xs font-semibold text-gray-700">{h}</span>
-            ))}
+            <p className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">₹{data.summary.totalCredit}</p>
           </div>
 
-          {/* Rows */}
-          <div className="divide-y divide-gray-200">
-            {data.transactions.map((tx) => {
-              const isPayment = tx.type === 'PAYMENT_RECEIVED' || tx.type === 'DEBIT';
-              return (
-                <div
-                  key={tx.id}
-                  className="grid grid-cols-[180px_100px_1fr_100px_180px] px-4 py-3 items-center hover:bg-gray-50 transition"
-                >
-                  {/* Date & Time */}
-                  <span className="text-sm text-gray-700">{formatTxDate(tx.createdAt)}</span>
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow transition">
+            <div className="flex items-center justify-between text-slate-400 mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Total Paid</span>
+              <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+                <ArrowUpRight className="w-4 h-4" />
+              </div>
+            </div>
+            <p className="text-xl sm:text-2xl font-bold text-emerald-600 tracking-tight">₹{data.summary.totalPaid}</p>
+          </div>
 
-                  {/* Type */}
-                  <span className={`text-sm ${isPayment ? 'text-gray-700' : 'text-gray-700'}`}>
-                    {isPayment ? 'Payment' : 'Credit'}
-                  </span>
+          <div className="bg-white p-5 rounded-2xl border border-rose-100 shadow-sm hover:shadow transition bg-gradient-to-br from-white to-rose-50/20">
+            <div className="flex items-center justify-between text-slate-400 mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-rose-700">Amount Due</span>
+              <div className="w-7 h-7 rounded-lg bg-rose-100/70 flex items-center justify-center text-rose-600">
+                <Wallet className="w-4 h-4" />
+              </div>
+            </div>
+            <p className="text-xl sm:text-2xl font-bold text-rose-600 tracking-tight">₹{data.summary.amountDue}</p>
+          </div>
 
-                  {/* Description */}
-                  <span className="text-sm text-gray-600">{tx.description || '—'}</span>
-
-                  {/* Amount */}
-                  <span className={`text-sm font-bold tabular-nums ${isPayment ? 'text-green-600' : 'text-red-600'}`}>
-                    {isPayment ? '+' : '-'}{formatAmount(tx.amount)}
-                  </span>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => { setSelectedTx(tx); setShowEditModal(true); }}
-                      className="text-xs text-gray-700 hover:underline px-1"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => alert(`Downloading invoice for #${tx.id}`)}
-                      className="text-xs text-gray-700 hover:underline px-1 text-center leading-tight"
-                    >
-                      Download<br />Invoice
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setSelectedTx(tx); setShowAuditModal(true); }}
-                      className="text-xs text-gray-700 hover:underline px-1 text-center leading-tight"
-                    >
-                      Audit<br />Trail
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(tx.id)}
-                      className="text-gray-400 hover:text-red-500 transition ml-1"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow transition">
+            <div className="flex items-center justify-between text-slate-400 mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Transactions</span>
+              <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
+                <ReceiptText className="w-4 h-4" />
+              </div>
+            </div>
+            <p className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">{data.summary.transactionCount}</p>
           </div>
         </div>
+
+        {/* Transaction History Table */}
+        <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+          <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="text-base font-bold text-slate-900">Transaction History</h2>
+            <span className="text-xs text-slate-500 font-medium">{data.transactions.length} total entries</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50/70 text-slate-500 text-[11px] font-bold uppercase tracking-wider border-b border-slate-100">
+                <tr>
+                  <th className="px-6 py-3.5">Date & Time</th>
+                  <th className="px-6 py-3.5">Type</th>
+                  <th className="px-6 py-3.5">Description</th>
+                  <th className="px-6 py-3.5 text-right">Amount</th>
+                  <th className="px-6 py-3.5 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {data.transactions.map((tx) => {
+                  const isPayment = tx.type === 'PAYMENT_RECEIVED' || tx.type === 'DEBIT';
+                  return (
+                    <tr key={tx.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap text-xs font-medium text-slate-700">
+                        {new Date(tx.createdAt).toLocaleDateString('en-GB', {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            isPayment
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                              : 'bg-rose-50 text-rose-700 border border-rose-200/60'
+                          }`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${isPayment ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                          {isPayment ? 'Payment' : 'Credit'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-600 text-xs font-normal">
+                        {tx.description || '—'}
+                      </td>
+                      <td className={`px-6 py-4 text-right font-bold text-sm tabular-nums ${isPayment ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {isPayment ? `+₹${tx.amount}` : `-₹${tx.amount}`}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedTx(tx);
+                              setShowEditModal(true);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                            title="Edit Transaction"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => alert(`Downloading invoice for Transaction #${tx.id}`)}
+                            className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                            title="Download Invoice"
+                          >
+                            <FileText className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedTx(tx);
+                              setShowAuditModal(true);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                            title="Audit Trail"
+                          >
+                            <History className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(tx.id)}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Modals */}
+        <AddTransactionModal
+          isOpen={showAddModal}
+          onClose={() => setShowAddModal(false)}
+          customerName={data.customer.name}
+        />
+
+        <EditTransactionModal
+          isOpen={showEditModal}
+          onClose={() => {
+            setShowEditModal(false);
+            setSelectedTx(null);
+          }}
+          transaction={selectedTx}
+          currentUserId="Employee 2"
+        />
+
+        <AuditTrailModal
+          isOpen={showAuditModal}
+          onClose={() => {
+            setShowAuditModal(false);
+            setSelectedTx(null);
+          }}
+          transaction={selectedTx}
+          customerName={data.customer.name}
+        />
+
+        <SendNoticeModal
+          isOpen={showNoticeModal}
+          onClose={() => setShowNoticeModal(false)}
+          customerName={data.customer.name}
+          amountDue={data.summary.amountDue}
+        />
       </main>
-
-      {/* Modals */}
-      <AddTransactionModal
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        customerName={data.customer.name}
-      />
-      <EditTransactionModal
-        isOpen={showEditModal}
-        onClose={() => { setShowEditModal(false); setSelectedTx(null); }}
-        transaction={selectedTx}
-        currentUserId="Employee 2"
-      />
-      <AuditTrailModal
-        isOpen={showAuditModal}
-        onClose={() => { setShowAuditModal(false); setSelectedTx(null); }}
-        transaction={selectedTx}
-        customerName={data.customer.name}
-      />
-      <SendNoticeModal
-        isOpen={showNoticeModal}
-        onClose={() => setShowNoticeModal(false)}
-        customerName={data.customer.name}
-        amountDue={data.summary.amountDue}
-      />
     </div>
   );
 }
