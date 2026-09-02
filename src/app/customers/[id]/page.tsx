@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, use } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import { 
   ArrowLeft, Plus, Bell, Edit2, FileText, History, Trash2, 
   ArrowUpRight, ArrowDownLeft, Wallet, ReceiptText 
@@ -12,6 +13,8 @@ import {
   AuditTrailModal, 
   SendNoticeModal 
 } from '@/components/LedgerModals';
+import { getLedgerData, deleteTransaction } from '@/app/customers/actions/ledger';
+import { TransactionType, type Transaction as PrismaTx } from '@prisma/client';
 
 export interface AuditLog {
   id: string;
@@ -24,6 +27,7 @@ export interface AuditLog {
 
 export interface Transaction {
   id: string;
+  ledgerId?: string;
   type: 'CREDIT_GIVEN' | 'PAYMENT_RECEIVED' | 'CREDIT' | 'DEBIT';
   amount: string | number;
   method?: string;
@@ -50,125 +54,114 @@ export interface CustomerLedgerData {
   transactions: Transaction[];
 }
 
-const INITIAL_MOCK_DATA: CustomerLedgerData = {
-  customer: {
-    id: '1',
-    name: 'Alisha Thakur',
-    phone: '9356xxxxxx',
-  },
-  summary: {
-    totalCredit: '13,445.23',
-    totalPaid: '10,400.00',
-    amountDue: '3,045.23',
-    transactionCount: 5,
-  },
-  transactions: [
-    {
-      id: '101',
-      type: 'PAYMENT_RECEIVED',
-      amount: '2400.00',
-      method: 'UPI',
-      description: 'Payment Received',
-      createdAt: '2026-08-08T12:13:00Z',
-      version: 1,
-      auditLogs: [
-        {
-          id: 'a1',
-          action: 'CREATED',
-          userId: 'Shopkeeper',
-          timestamp: '2026-08-08T12:13:00Z',
-          newValue: { amount: '2400.00', type: 'PAYMENT_RECEIVED', method: 'UPI' },
-        },
-      ],
-    },
-    {
-      id: '102',
-      type: 'PAYMENT_RECEIVED',
-      amount: '3000.00',
-      method: 'Cash',
-      description: 'Cash Received',
-      createdAt: '2026-08-01T10:03:00Z',
-      version: 1,
-      auditLogs: [],
-    },
-    {
-      id: '103',
-      type: 'CREDIT_GIVEN',
-      amount: '2800.00',
-      method: 'Cash',
-      description: 'Goods Purchased',
-      createdAt: '2026-07-28T08:37:00Z',
-      version: 1,
-      auditLogs: [],
-    },
-    {
-      id: '104',
-      type: 'PAYMENT_RECEIVED',
-      amount: '5000.00',
-      method: 'Cash',
-      description: 'Cash Received',
-      createdAt: '2026-07-20T10:03:00Z',
-      version: 1,
-      auditLogs: [],
-    },
-    {
-      id: '105',
-      type: 'CREDIT_GIVEN',
-      amount: '8645.23',
-      method: 'Cash',
-      description: 'Goods Purchased',
-      createdAt: '2026-07-18T10:03:00Z',
-      version: 2,
-      lockedBy: 'Employee 1',
-      lockedAt: new Date().toISOString(),
-      auditLogs: [
-        {
-          id: 'a2',
-          action: 'CREATED',
-          userId: 'Shopkeeper',
-          timestamp: '2026-07-18T10:03:00Z',
-          newValue: { amount: '8000.00', type: 'CREDIT_GIVEN', method: 'Cash' },
-        },
-        {
-          id: 'a3',
-          action: 'EDITED',
-          userId: 'Employee 1',
-          timestamp: '2026-07-18T10:15:00Z',
-          oldValue: { amount: '8000.00' },
-          newValue: { amount: '8645.23' },
-        },
-      ],
-    },
-  ],
-};
+export default function CustomerLedgerPage() {
+  const params = useParams();
+  const rawId = params?.id;
+  const customerId = Array.isArray(rawId) ? rawId[0] : rawId || 'shopkeeper_101';
 
-export default function CustomerLedgerPage({
-  params,
-}: {
-  params: Promise<{ id: string }> | { id: string };
-}) {
-  const resolvedParams = params instanceof Promise ? use(params) : params;
-  
+  const [ledgerId, setLedgerId] = useState<string>('');
   const [data, setData] = useState<CustomerLedgerData>({
-    ...INITIAL_MOCK_DATA,
     customer: {
-      ...INITIAL_MOCK_DATA.customer,
-      id: resolvedParams?.id || '1',
+      id: customerId,
+      name: 'Customer Account',
+      phone: '—',
     },
+    summary: {
+      totalCredit: '0.00',
+      totalPaid: '0.00',
+      amountDue: '0.00',
+      transactionCount: 0,
+    },
+    transactions: [],
   });
 
+  const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
-  const handleDelete = (txId: string) => {
-    if (confirm('Are you sure you want to delete this transaction?')) {
-      setData((prev) => ({
-        ...prev,
-        transactions: prev.transactions.filter((t) => t.id !== txId),
-      }));
+  const fetchLedger = useCallback(async () => {
+    try {
+      const res = await getLedgerData(customerId);
+      if (res.success && res.data) {
+        const rawLedger = res.data;
+        setLedgerId(rawLedger.id);
+
+        let totalCredit = 0;
+        let totalPaid = 0;
+
+        const formattedTransactions: Transaction[] = rawLedger.transactions.map((tx: PrismaTx) => {
+          const numAmount = Number(tx.amount);
+          if (tx.type === TransactionType.CREDIT) {
+            totalCredit += numAmount;
+          } else {
+            totalPaid += numAmount;
+          }
+
+          return {
+            id: tx.id,
+            ledgerId: tx.ledgerId,
+            type: tx.type === TransactionType.CREDIT ? 'CREDIT_GIVEN' : 'PAYMENT_RECEIVED',
+            amount: numAmount.toFixed(2),
+            description: tx.note || undefined,
+            createdAt: new Date(tx.createdAt).toISOString(),
+            version: tx.version,
+            method: 'Cash',
+          };
+        });
+
+        const amountDue = totalCredit - totalPaid;
+
+        setData({
+          customer: {
+            id: rawLedger.shopkeeperId,
+            name: rawLedger.title || 'Customer Account',
+            phone: 'Active',
+          },
+          summary: {
+            totalCredit: totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+            totalPaid: totalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+            amountDue: amountDue.toLocaleString('en-IN', { minimumFractionDigits: 2 }),
+            transactionCount: formattedTransactions.length,
+          },
+          transactions: formattedTransactions,
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching ledger:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [customerId]);
+
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      if (!ignore) {
+        await fetchLedger();
+      }
+    }
+    load();
+    return () => {
+      ignore = true;
+    };
+  }, [fetchLedger]);
+
+  const handleDelete = async (tx: Transaction) => {
+    if (!confirm('Are you sure you want to delete this transaction?')) return;
+
+    const res = await deleteTransaction({
+      id: tx.id,
+      ledgerId: tx.ledgerId || ledgerId,
+      actorId: 'shopkeeper_101',
+    });
+
+    if (res.success) {
+      await fetchLedger();
+    } else {
+      alert(res.error || 'Failed to delete transaction.');
     }
   };
 
@@ -199,7 +192,7 @@ export default function CustomerLedgerPage({
                   Customer
                 </span>
               </div>
-              <p className="text-xs font-mono text-slate-500 mt-1">{data.customer.phone}</p>
+              <p className="text-xs font-mono text-slate-500 mt-1">ID: {data.customer.id}</p>
             </div>
           </div>
 
@@ -221,7 +214,7 @@ export default function CustomerLedgerPage({
           </div>
         </div>
 
-        {/* 4 Summary Stat Cards */}
+        {/* Summary Stat Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow transition">
             <div className="flex items-center justify-between text-slate-400 mb-2">
@@ -271,102 +264,113 @@ export default function CustomerLedgerPage({
             <span className="text-xs text-slate-500 font-medium">{data.transactions.length} total entries</span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50/70 text-slate-500 text-[11px] font-bold uppercase tracking-wider border-b border-slate-100">
-                <tr>
-                  <th className="px-6 py-3.5">Date & Time</th>
-                  <th className="px-6 py-3.5">Type</th>
-                  <th className="px-6 py-3.5">Description</th>
-                  <th className="px-6 py-3.5 text-right">Amount</th>
-                  <th className="px-6 py-3.5 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data.transactions.map((tx) => {
-                  const isPayment = tx.type === 'PAYMENT_RECEIVED' || tx.type === 'DEBIT';
-                  return (
-                    <tr key={tx.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-xs font-medium text-slate-700">
-                        {new Date(tx.createdAt).toLocaleDateString('en-GB', {
-                          day: 'numeric',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                            isPayment
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
-                              : 'bg-rose-50 text-rose-700 border border-rose-200/60'
-                          }`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${isPayment ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-                          {isPayment ? 'Payment' : 'Credit'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-slate-600 text-xs font-normal">
-                        {tx.description || '—'}
-                      </td>
-                      <td className={`px-6 py-4 text-right font-bold text-sm tabular-nums ${isPayment ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {isPayment ? `+₹${tx.amount}` : `-₹${tx.amount}`}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedTx(tx);
-                              setShowEditModal(true);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-                            title="Edit Transaction"
+          {loading ? (
+            <div className="py-12 text-center text-slate-400 text-sm">Loading transactions...</div>
+          ) : data.transactions.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-sm">
+              No transactions recorded yet. Click &quot;Add Transaction&quot; to start.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50/70 text-slate-500 text-[11px] font-bold uppercase tracking-wider border-b border-slate-100">
+                  <tr>
+                    <th className="px-6 py-3.5">Date & Time</th>
+                    <th className="px-6 py-3.5">Type</th>
+                    <th className="px-6 py-3.5">Description</th>
+                    <th className="px-6 py-3.5 text-right">Amount</th>
+                    <th className="px-6 py-3.5 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {data.transactions.map((tx) => {
+                    const isPayment = tx.type === 'PAYMENT_RECEIVED' || tx.type === 'DEBIT';
+                    return (
+                      <tr key={tx.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap text-xs font-medium text-slate-700">
+                          {new Date(tx.createdAt).toLocaleDateString('en-GB', {
+                            day: 'numeric',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                              isPayment
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                                : 'bg-rose-50 text-rose-700 border border-rose-200/60'
+                            }`}
                           >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => alert(`Downloading invoice for Transaction #${tx.id}`)}
-                            className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
-                            title="Download Invoice"
-                          >
-                            <FileText className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedTx(tx);
-                              setShowAuditModal(true);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                            title="Audit Trail"
-                          >
-                            <History className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(tx.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isPayment ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                            {isPayment ? 'Payment' : 'Credit'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-slate-600 text-xs font-normal">
+                          {tx.description || '—'}
+                        </td>
+                        <td className={`px-6 py-4 text-right font-bold text-sm tabular-nums ${isPayment ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {isPayment ? `+₹${tx.amount}` : `-₹${tx.amount}`}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedTx(tx);
+                                setShowEditModal(true);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                              title="Edit Transaction"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => alert(`Downloading invoice for Transaction #${tx.id}`)}
+                              className="p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+                              title="Download Invoice"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedTx(tx);
+                                setShowAuditModal(true);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                              title="Audit Trail"
+                            >
+                              <History className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(tx)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Modals */}
         <AddTransactionModal
           isOpen={showAddModal}
-          onClose={() => setShowAddModal(false)}
+          onClose={() => {
+            setShowAddModal(false);
+            fetchLedger();
+          }}
           customerName={data.customer.name}
         />
 
@@ -375,9 +379,10 @@ export default function CustomerLedgerPage({
           onClose={() => {
             setShowEditModal(false);
             setSelectedTx(null);
+            fetchLedger();
           }}
           transaction={selectedTx}
-          currentUserId="Employee 2"
+          currentUserId="shopkeeper_101"
         />
 
         <AuditTrailModal
