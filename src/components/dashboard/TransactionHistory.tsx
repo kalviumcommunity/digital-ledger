@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Plus, X } from 'lucide-react';
-import type { DashboardTransaction, FilterState, PaginationMeta } from '@/app/dashboard/types';
+import type { DashboardTransaction, PaginationMeta } from '@/app/dashboard/types';
 import { formatDateGroup } from '@/app/dashboard/mockData';
 import TransactionRow from './TransactionRow';
 import Pagination from './Pagination';
@@ -10,6 +10,11 @@ import Pagination from './Pagination';
 interface TransactionHistoryProps {
   transactions: DashboardTransaction[];
   initialSearch?: string;
+  filterType?: 'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN';
+  onFilterChange?: (t: 'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN') => void;
+  isLoading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   onAddTransaction: () => void;
   onEditTransaction: (tx: DashboardTransaction) => void;
   onDeleteTransaction: (tx: DashboardTransaction) => void;
@@ -20,14 +25,21 @@ const PAGE_SIZE = 10;
 export default function TransactionHistory({
   transactions,
   initialSearch = '',
+  filterType: controlledFilterType,
+  onFilterChange,
+  isLoading = false,
+  error = null,
+  onRetry,
   onAddTransaction,
   onEditTransaction,
   onDeleteTransaction,
 }: TransactionHistoryProps) {
   const [search, setSearch] = useState(initialSearch);
-  const [filter, setFilter] = useState<FilterState>({ type: 'ALL' });
+  const [internalFilterType, setInternalFilterType] = useState<'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN'>('ALL');
   const [filterOpen, setFilterOpen] = useState(false);
   const [page, setPage] = useState(1);
+
+  const activeFilterType = controlledFilterType !== undefined ? controlledFilterType : internalFilterType;
 
   // ── Filtering ─────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -39,11 +51,11 @@ export default function TransactionHistory({
         (tx.description ?? '').toLowerCase().includes(search.toLowerCase());
 
       const matchType =
-        filter.type === 'ALL' || tx.type === filter.type;
+        activeFilterType === 'ALL' || tx.type === activeFilterType;
 
       return matchSearch && matchType;
     });
-  }, [transactions, search, filter]);
+  }, [transactions, search, activeFilterType]);
 
   // ── Pagination ────────────────────────────────────────────────────────────
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
@@ -149,9 +161,9 @@ export default function TransactionHistory({
                 <line x1="8" y1="12" x2="16" y2="12"/>
                 <line x1="11" y1="18" x2="13" y2="18"/>
               </svg>
-              {filter.type === 'ALL'
+              {activeFilterType === 'ALL'
                 ? 'Select'
-                : filter.type === 'PAYMENT_RECEIVED'
+                : activeFilterType === 'PAYMENT_RECEIVED'
                 ? 'Payment Received'
                 : 'Credit Given'}
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -167,12 +179,13 @@ export default function TransactionHistory({
                     id={`filter-type-${t}`}
                     type="button"
                     onClick={() => {
-                      setFilter({ type: t });
+                      setInternalFilterType(t);
+                      onFilterChange?.(t);
                       setPage(1);
                       setFilterOpen(false);
                     }}
                     className={`w-full text-left px-3 py-2 text-xs transition ${
-                      filter.type === t
+                      activeFilterType === t
                         ? 'bg-gray-100 font-bold text-gray-900'
                         : 'text-gray-700 hover:bg-gray-50'
                     }`}
@@ -188,7 +201,44 @@ export default function TransactionHistory({
 
       {/* ── Transaction list — scrollable ─────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 -mr-1">
-        {grouped.length === 0 ? (
+        {isLoading ? (
+          <div className="space-y-3 p-1">
+            {[1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="border border-gray-200 rounded-2xl p-4 bg-gray-50/70 animate-pulse flex items-center gap-4"
+              >
+                <div className="w-11 h-11 rounded-full bg-gray-200 shrink-0" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3.5 bg-gray-200 rounded w-1/3" />
+                  <div className="h-2.5 bg-gray-200 rounded w-1/5" />
+                </div>
+                <div className="h-4 bg-gray-200 rounded w-20 shrink-0" />
+              </div>
+            ))}
+          </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center h-48 text-center p-4">
+            <div className="w-10 h-10 rounded-full bg-red-50 text-red-500 flex items-center justify-center mb-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </div>
+            <p className="text-sm font-semibold text-gray-800">Failed to load transactions</p>
+            <p className="text-xs text-gray-500 mt-0.5 max-w-xs">{error}</p>
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="mt-3 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition"
+              >
+                Try Again
+              </button>
+            )}
+          </div>
+        ) : grouped.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 text-center">
             <p className="text-sm text-gray-400 font-medium">No transactions found</p>
             {search && (
