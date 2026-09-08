@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --foreground: #1e293b;
 }
 
 @theme inline {
@@ -12,15 +12,27 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Hide everything except the invoice surface when printing. */
+@media print {
+  body {
+    background: #ffffff;
+  }
+  body.printing * {
+    visibility: hidden;
+  }
+  body.printing #invoice-print,
+  body.printing #invoice-print * {
+    visibility: visible;
+  }
+  body.printing #invoice-print {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+  }
 }
