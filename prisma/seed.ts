@@ -1,71 +1,162 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type TransactionType } from "@prisma/client";
+import { promisify } from "node:util";
+import { randomBytes, scrypt as scryptCallback } from "node:crypto";
 
 const prisma = new PrismaClient();
+const scrypt = promisify(scryptCallback);
+
+const SALT_BYTES = 16;
+const KEY_BYTES = 64;
+
+async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(SALT_BYTES);
+  const derived = (await scrypt(password, salt, KEY_BYTES)) as Buffer;
+  return `scrypt:${salt.toString("hex")}:${derived.toString("hex")}`;
+}
+
+interface TxSpec {
+  type: TransactionType;
+  amount: number;
+  note: string;
+  method?: string;
+  daysAgo?: number;
+}
 
 async function main() {
-  console.log("Seeding database...");
+  console.log("Seeding database…");
 
-  // Clean existing records (optional, in order of dependencies)
-  await prisma.auditLog.deleteMany();
-  await prisma.transaction.deleteMany();
-  await prisma.ledger.deleteMany();
+  await prisma.user.deleteMany();
 
-  // 1. Create a Ledger
-  const ledger = await prisma.ledger.create({
+  const ownerPassword = await hashPassword("password123");
+  const staffPassword = await hashPassword("staff@1234");
+
+  const owner = await prisma.user.create({
     data: {
-      shopkeeperId: "shopkeeper_101",
-      title: "General Store Ledger",
-      totalBalance: 1500.0,
+      email: "demo@khata.com",
+      name: "Rahul Verma (Demo)",
+      password: ownerPassword,
+      role: "SHOPKEEPER",
     },
   });
 
-  // 2. Create Initial Transactions
-  const tx1 = await prisma.transaction.create({
+  await prisma.user.create({
     data: {
-      ledgerId: ledger.id,
-      type: "CREDIT",
-      amount: 2000.0,
-      note: "Initial wholesale cash deposit",
-      version: 1,
-      isDeleted: false,
+      email: "staff@khata.com",
+      name: "Aman Gupta",
+      password: staffPassword,
+      role: "EMPLOYEE",
     },
   });
 
-  const tx2 = await prisma.transaction.create({
-    data: {
-      ledgerId: ledger.id,
-      type: "DEBIT",
-      amount: 500.0,
-      note: "Inventory supplier payment",
-      version: 1,
-      isDeleted: false,
+  const customerSeed: { name: string; phone: string | null; txs: TxSpec[] }[] = [
+    {
+      name: "Aarav Sharma",
+      phone: "9876543210",
+      txs: [
+        { type: "CREDIT", amount: 3500, note: "Kirana supplies on credit", daysAgo: 21 },
+        { type: "CREDIT", amount: 1200, note: "Atta & rice stock", daysAgo: 12 },
+        { type: "DEBIT", amount: 2000, note: "Partial payment — UPI", method: "UPI", daysAgo: 8 },
+        { type: "CREDIT", amount: 800, note: "Monthly provisions", daysAgo: 2 },
+      ],
     },
-  });
+    {
+      name: "Kiran Patel",
+      phone: "9765432109",
+      txs: [
+        { type: "CREDIT", amount: 5000, note: "Textile invoice 1042", daysAgo: 30 },
+        { type: "DEBIT", amount: 5000, note: "Cleared in full", daysAgo: 27 },
+        { type: "CREDIT", amount: 2250, note: "New fabric order", method: "Bank Transfer", daysAgo: 5 },
+      ],
+    },
+    {
+      name: "Mohammed Irfan",
+      phone: null,
+      txs: [
+        { type: "CREDIT", amount: 910, note: "Tea supplier — cash memo", daysAgo: 15 },
+        { type: "CREDIT", amount: 640, note: "Snacks replenishment", daysAgo: 9 },
+      ],
+    },
+    {
+      name: "Sangeeta Rao",
+      phone: "9012345678",
+      txs: [
+        { type: "CREDIT", amount: 4200, note: "Home appliances — CR/0724", daysAgo: 18 },
+        { type: "DEBIT", amount: 1200, note: "Installment payment", daysAgo: 11 },
+        { type: "CREDIT", amount: 3000, note: "Second installment purchase", method: "Cheque", daysAgo: 4 },
+      ],
+    },
+    {
+      name: "Vikram Singh",
+      phone: "9900112233",
+      txs: [
+        { type: "CREDIT", amount: 10000, note: "Construction material — bulk", daysAgo: 25 },
+        { type: "DEBIT", amount: 7500, note: "Payment by cash", daysAgo: 6 },
+      ],
+    },
+  ];
 
-  // 3. Create Audit Logs
-  await prisma.auditLog.createMany({
-    data: [
-      {
-        transactionId: tx1.id,
-        action: "CREATE",
-        newData: { amount: 2000.0, type: "CREDIT", note: tx1.note },
-        actorId: "shopkeeper_101",
-      },
-      {
-        transactionId: tx2.id,
-        action: "CREATE",
-        newData: { amount: 500.0, type: "DEBIT", note: tx2.note },
-        actorId: "shopkeeper_101",
-      },
-    ],
-  });
+  for (const spec of customerSeed) {
+    const customer = await prisma.customer.create({
+      data: { userId: owner.id, name: spec.name, phone: spec.phone },
+    });
 
-  console.log("Database seeded successfully!");
+    const ledger = await prisma.ledger.create({
+      data: { customerId: customer.id },
+    });
+
+    let total = 0;
+    for (const txSpec of spec.txs) {
+      const delta = txSpec.type === "CREDIT" ? txSpec.amount : -txSpec.amount;
+      total += delta;
+
+      const createdAt = new Date(
+        Date.now() - (txSpec.daysAgo ?? 0) * 24 * 60 * 60 * 1000
+      );
+
+      const transaction = await prisma.transaction.create({
+        data: {
+          ledgerId: ledger.id,
+          type: txSpec.type,
+          amount: txSpec.amount,
+          note: txSpec.note,
+          method: txSpec.method ?? "Cash",
+          version: 1,
+          isDeleted: false,
+          createdAt,
+          updatedAt: createdAt,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          transactionId: transaction.id,
+          action: "CREATE",
+          newData: {
+            amount: txSpec.amount,
+            type: txSpec.type,
+            note: txSpec.note,
+            method: txSpec.method ?? "Cash",
+            version: 1,
+          },
+          actorId: owner.name,
+          timestamp: createdAt,
+        },
+      });
+    }
+
+    await prisma.ledger.update({
+      where: { id: ledger.id },
+      data: { totalBalance: total },
+    });
+  }
+
+  console.log("Seed complete.");
+  console.log("Sign in with demo@khata.com / password123");
 }
 
 main()
-  .catch((e) => {
-    console.error("Seeding error:", e);
+  .catch((error) => {
+    console.error("Seeding error:", error);
     process.exit(1);
   })
   .finally(async () => {
