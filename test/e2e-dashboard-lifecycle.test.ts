@@ -29,6 +29,7 @@ interface TestItem {
   ledgerId: string;
   type: string;
   amount: number;
+  paymentMethod?: string;
   note?: string;
   ledger?: { id: string; title: string };
 }
