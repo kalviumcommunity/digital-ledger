@@ -134,16 +134,27 @@ export class TransactionService {
   ): Promise<{ exists: boolean; authorized: boolean; ledger?: { id: string; title: string; shopkeeperId: string } }> {
     if (await checkDbConnection()) {
       try {
-        const ledger = await prisma.ledger.findUnique({
+        let ledger = await prisma.ledger.findUnique({
           where: { id: ledgerId },
-          select: { id: true, title: true, shopkeeperId: true },
+          include: { customer: true },
         });
 
-        if (ledger) {
+        if (!ledger) {
+          ledger = await prisma.ledger.findUnique({
+            where: { customerId: ledgerId },
+            include: { customer: true },
+          });
+        }
+
+        if (ledger && ledger.customer) {
           return {
             exists: true,
-            authorized: ledger.shopkeeperId === shopkeeperId,
-            ledger,
+            authorized: ledger.customer.userId === shopkeeperId,
+            ledger: {
+              id: ledger.id,
+              title: ledger.customer.name,
+              shopkeeperId: ledger.customer.userId,
+            },
           };
         }
       } catch {
@@ -191,14 +202,30 @@ export class TransactionService {
   }): Promise<TransactionRecord> {
     if (await checkDbConnection()) {
       try {
+        let targetLedgerId = data.ledgerId;
+        const maybeCustomer = await prisma.customer.findUnique({
+          where: { id: data.ledgerId },
+          include: { ledger: true },
+        });
+        if (maybeCustomer?.ledger) {
+          targetLedgerId = maybeCustomer.ledger.id;
+        }
+
         const created = await prisma.transaction.create({
           data: {
-            ledgerId: data.ledgerId,
+            ledgerId: targetLedgerId,
             type: data.type,
             amount: new Prisma.Decimal(data.amount.toFixed(2)),
-            date: data.date,
-            paymentMethod: data.paymentMethod,
+            createdAt: data.date,
+            method: data.paymentMethod || 'Cash',
             note: data.note,
+          },
+          include: {
+            ledger: {
+              include: {
+                customer: true,
+              },
+            },
           },
         });
 
@@ -207,13 +234,16 @@ export class TransactionService {
           ledgerId: created.ledgerId,
           type: created.type as 'CREDIT' | 'DEBIT',
           amount: Number(created.amount),
-          date: created.date,
-          paymentMethod: created.paymentMethod,
+          date: created.createdAt,
+          paymentMethod: created.method,
           note: created.note,
           version: created.version,
           isDeleted: created.isDeleted,
           createdAt: created.createdAt,
           updatedAt: created.updatedAt,
+          ledger: created.ledger?.customer
+            ? { id: created.ledger.id, title: created.ledger.customer.name }
+            : undefined,
         };
       } catch {
         markDatabaseOffline();
@@ -280,19 +310,28 @@ export class TransactionService {
 
     if (await checkDbConnection()) {
       try {
-        const where: Record<string, unknown> = {
+        const where: Prisma.TransactionWhereInput = {
           isDeleted: false,
           ledger: {
-            shopkeeperId,
+            customer: {
+              userId: shopkeeperId,
+            },
           },
         };
 
-        if (ledgerId) where.ledgerId = ledgerId;
+        if (ledgerId) {
+          where.OR = [
+            { ledgerId },
+            { ledger: { customerId: ledgerId } },
+          ];
+        }
         if (type) where.type = type;
-        if (paymentMethod && paymentMethod !== 'ALL') where.paymentMethod = paymentMethod;
+        if (paymentMethod && paymentMethod !== 'ALL') {
+          where.method = paymentMethod;
+        }
 
         if (dateFrom || dateTo) {
-          const dateFilter: Record<string, Date> = {};
+          const dateFilter: Prisma.DateTimeFilter = {};
           if (dateFrom) {
             const df = new Date(dateFrom);
             if (!isNaN(df.getTime())) dateFilter.gte = df;
@@ -302,16 +341,22 @@ export class TransactionService {
             if (!isNaN(dt.getTime())) dateFilter.lte = dt;
           }
           if (Object.keys(dateFilter).length > 0) {
-            where.date = dateFilter;
+            where.createdAt = dateFilter;
           }
         }
 
         if (search) {
-          where.OR = [
-            { note: { contains: search, mode: 'insensitive' } },
-            { ledger: { title: { contains: search, mode: 'insensitive' } } },
+          where.AND = [
+            {
+              OR: [
+                { note: { contains: search, mode: 'insensitive' } },
+                { ledger: { customer: { name: { contains: search, mode: 'insensitive' } } } },
+              ],
+            },
           ];
         }
+
+        const prismaSortBy = sortBy === 'date' ? 'createdAt' : sortBy;
 
         const [total, rows] = await Promise.all([
           prisma.transaction.count({ where }),
@@ -319,14 +364,18 @@ export class TransactionService {
             where,
             include: {
               ledger: {
-                select: {
-                  id: true,
-                  title: true,
+                include: {
+                  customer: {
+                    select: {
+                      id: true,
+                      name: true,
+                    },
+                  },
                 },
               },
             },
             orderBy: {
-              [sortBy]: sortOrder,
+              [prismaSortBy]: sortOrder,
             },
             skip: (page - 1) * limit,
             take: limit,
@@ -338,14 +387,14 @@ export class TransactionService {
           ledgerId: r.ledgerId,
           type: r.type as 'CREDIT' | 'DEBIT',
           amount: Number(r.amount),
-          date: r.date,
-          paymentMethod: r.paymentMethod,
+          date: r.createdAt,
+          paymentMethod: r.method,
           note: r.note,
           version: r.version,
           isDeleted: r.isDeleted,
           createdAt: r.createdAt,
           updatedAt: r.updatedAt,
-          ledger: r.ledger ? { id: r.ledger.id, title: r.ledger.title } : undefined,
+          ledger: r.ledger?.customer ? { id: r.ledger.id, title: r.ledger.customer.name } : undefined,
         }));
 
         return {
@@ -424,10 +473,14 @@ export class TransactionService {
           where: { id },
           include: {
             ledger: {
-              select: {
-                id: true,
-                title: true,
-                shopkeeperId: true,
+              include: {
+                customer: {
+                  select: {
+                    id: true,
+                    name: true,
+                    userId: true,
+                  },
+                },
               },
             },
           },
@@ -437,7 +490,7 @@ export class TransactionService {
           return { notFound: true };
         }
 
-        if (found.ledger.shopkeeperId !== shopkeeperId) {
+        if (found.ledger.customer.userId !== shopkeeperId) {
           return { unauthorized: true };
         }
 
@@ -447,8 +500,8 @@ export class TransactionService {
             ledgerId: found.ledgerId,
             type: found.type as 'CREDIT' | 'DEBIT',
             amount: Number(found.amount),
-            date: found.date,
-            paymentMethod: found.paymentMethod,
+            date: found.createdAt,
+            paymentMethod: found.method,
             note: found.note,
             version: found.version,
             isDeleted: found.isDeleted,
@@ -456,7 +509,7 @@ export class TransactionService {
             updatedAt: found.updatedAt,
             ledger: {
               id: found.ledger.id,
-              title: found.ledger.title,
+              title: found.ledger.customer.name,
             },
           },
         };
@@ -503,10 +556,14 @@ export class TransactionService {
           where: { id },
           include: {
             ledger: {
-              select: {
-                id: true,
-                title: true,
-                shopkeeperId: true,
+              include: {
+                customer: {
+                  select: {
+                    id: true,
+                    name: true,
+                    userId: true,
+                  },
+                },
               },
             },
           },
@@ -516,15 +573,17 @@ export class TransactionService {
           return { notFound: true };
         }
 
-        if (existing.ledger.shopkeeperId !== shopkeeperId) {
+        if (existing.ledger.customer.userId !== shopkeeperId) {
           return { unauthorized: true };
         }
 
-        const updateData: Record<string, unknown> = {};
+        const updateData: Prisma.TransactionUpdateInput = {};
         if (updates.type !== undefined) updateData.type = updates.type;
         if (updates.amount !== undefined) updateData.amount = new Prisma.Decimal(updates.amount.toFixed(2));
-        if (updates.date !== undefined) updateData.date = updates.date;
-        if (updates.paymentMethod !== undefined) updateData.paymentMethod = updates.paymentMethod;
+        if (updates.date !== undefined) updateData.createdAt = updates.date;
+        if (updates.paymentMethod !== undefined) {
+          updateData.method = updates.paymentMethod;
+        }
         if (updates.note !== undefined) updateData.note = updates.note;
 
         const updated = await prisma.transaction.update({
@@ -532,9 +591,13 @@ export class TransactionService {
           data: updateData,
           include: {
             ledger: {
-              select: {
-                id: true,
-                title: true,
+              include: {
+                customer: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
               },
             },
           },
@@ -546,14 +609,16 @@ export class TransactionService {
             ledgerId: updated.ledgerId,
             type: updated.type as 'CREDIT' | 'DEBIT',
             amount: Number(updated.amount),
-            date: updated.date,
-            paymentMethod: updated.paymentMethod,
+            date: updated.createdAt,
+            paymentMethod: updated.method,
             note: updated.note,
             version: updated.version,
             isDeleted: updated.isDeleted,
             createdAt: updated.createdAt,
             updatedAt: updated.updatedAt,
-            ledger: updated.ledger ? { id: updated.ledger.id, title: updated.ledger.title } : undefined,
+            ledger: updated.ledger?.customer
+              ? { id: updated.ledger.id, title: updated.ledger.customer.name }
+              : undefined,
           },
         };
       } catch {
@@ -593,9 +658,13 @@ export class TransactionService {
           where: { id },
           include: {
             ledger: {
-              select: {
-                id: true,
-                shopkeeperId: true,
+              include: {
+                customer: {
+                  select: {
+                    id: true,
+                    userId: true,
+                  },
+                },
               },
             },
           },
@@ -605,7 +674,7 @@ export class TransactionService {
           return { notFound: true };
         }
 
-        if (existing.ledger.shopkeeperId !== shopkeeperId) {
+        if (existing.ledger.customer.userId !== shopkeeperId) {
           return { unauthorized: true };
         }
 
@@ -668,7 +737,9 @@ export class TransactionService {
           where: {
             isDeleted: false,
             ledger: {
-              shopkeeperId,
+              customer: {
+                userId: shopkeeperId,
+              },
             },
           },
           select: {
@@ -719,3 +790,4 @@ export class TransactionService {
     memoryStore.reset();
   }
 }
+

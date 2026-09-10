@@ -74,18 +74,22 @@ export class CustomerService {
   static async getAll(shopkeeperId: string): Promise<CustomerDTO[]> {
     if (await checkDbConnection()) {
       try {
-        const ledgers = await prisma.ledger.findMany({
+        const customers = await prisma.customer.findMany({
           where: {
-            shopkeeperId,
+            userId: shopkeeperId,
           },
           include: {
-            transactions: {
-              where: {
-                isDeleted: false,
-              },
-              select: {
-                type: true,
-                amount: true,
+            ledger: {
+              include: {
+                transactions: {
+                  where: {
+                    isDeleted: false,
+                  },
+                  select: {
+                    type: true,
+                    amount: true,
+                  },
+                },
               },
             },
           },
@@ -94,11 +98,12 @@ export class CustomerService {
           },
         });
 
-        return ledgers.map((ledger) => {
+        return customers.map((customer) => {
           let totalCredit = 0;
           let totalPaid = 0;
+          const txns = customer.ledger?.transactions || [];
 
-          ledger.transactions.forEach((tx) => {
+          txns.forEach((tx) => {
             const amt = Number(tx.amount);
             if (tx.type === TransactionType.CREDIT) {
               totalCredit += amt;
@@ -110,15 +115,15 @@ export class CustomerService {
           const amountDue = totalCredit - totalPaid;
 
           return {
-            id: ledger.id,
-            name: ledger.title,
-            phone: '9876xxxxxx',
+            id: customer.ledger?.id || customer.id,
+            name: customer.name,
+            phone: customer.phone || '9876xxxxxx',
             amountDue: Math.max(0, amountDue),
             totalCredit,
             totalPaid,
-            transactionCount: ledger.transactions.length,
-            shopkeeperId: ledger.shopkeeperId,
-            createdAt: ledger.createdAt.toISOString(),
+            transactionCount: txns.length,
+            shopkeeperId: customer.userId,
+            createdAt: customer.createdAt.toISOString(),
           };
         });
       } catch {
@@ -136,33 +141,43 @@ export class CustomerService {
   static async getById(id: string, shopkeeperId: string): Promise<CustomerDTO | null> {
     if (await checkDbConnection()) {
       try {
-        const ledger = await prisma.ledger.findUnique({
-          where: { id },
+        const customer = await prisma.customer.findFirst({
+          where: {
+            OR: [
+              { id },
+              { ledger: { id } },
+            ],
+          },
           include: {
-            transactions: {
-              where: {
-                isDeleted: false,
-              },
-              select: {
-                type: true,
-                amount: true,
+            ledger: {
+              include: {
+                transactions: {
+                  where: {
+                    isDeleted: false,
+                  },
+                  select: {
+                    type: true,
+                    amount: true,
+                  },
+                },
               },
             },
           },
         });
 
-        if (!ledger) {
+        if (!customer) {
           return null;
         }
 
-        if (ledger.shopkeeperId !== shopkeeperId) {
+        if (customer.userId !== shopkeeperId) {
           return null;
         }
 
         let totalCredit = 0;
         let totalPaid = 0;
+        const txns = customer.ledger?.transactions || [];
 
-        ledger.transactions.forEach((tx) => {
+        txns.forEach((tx) => {
           const amt = Number(tx.amount);
           if (tx.type === TransactionType.CREDIT) {
             totalCredit += amt;
@@ -174,15 +189,15 @@ export class CustomerService {
         const amountDue = totalCredit - totalPaid;
 
         return {
-          id: ledger.id,
-          name: ledger.title,
-          phone: '9876xxxxxx',
+          id: customer.ledger?.id || customer.id,
+          name: customer.name,
+          phone: customer.phone || '9876xxxxxx',
           amountDue: Math.max(0, amountDue),
           totalCredit,
           totalPaid,
-          transactionCount: ledger.transactions.length,
-          shopkeeperId: ledger.shopkeeperId,
-          createdAt: ledger.createdAt.toISOString(),
+          transactionCount: txns.length,
+          shopkeeperId: customer.userId,
+          createdAt: customer.createdAt.toISOString(),
         };
       } catch {
         markDatabaseOffline();
@@ -209,24 +224,44 @@ export class CustomerService {
 
     if (await checkDbConnection()) {
       try {
-        const ledger = await prisma.ledger.create({
+        await prisma.user.upsert({
+          where: { id: shopkeeperId },
+          update: {},
+          create: {
+            id: shopkeeperId,
+            email: `${shopkeeperId}@khatabook.local`,
+            name: 'Shopkeeper',
+            password: 'scrypt:mock:password',
+            role: 'SHOPKEEPER',
+          },
+        }).catch(() => {});
+
+        const customer = await prisma.customer.create({
           data: {
-            title: name,
-            shopkeeperId,
-            totalBalance: new Prisma.Decimal(initialBalance),
+            name,
+            phone,
+            userId: shopkeeperId,
+            ledger: {
+              create: {
+                totalBalance: new Prisma.Decimal(initialBalance),
+              },
+            },
+          },
+          include: {
+            ledger: true,
           },
         });
 
         return {
-          id: ledger.id,
-          name: ledger.title,
-          phone,
+          id: customer.ledger?.id || customer.id,
+          name: customer.name,
+          phone: customer.phone || phone,
           amountDue: initialBalance,
           totalCredit: initialBalance,
           totalPaid: 0,
           transactionCount: 0,
-          shopkeeperId: ledger.shopkeeperId,
-          createdAt: ledger.createdAt.toISOString(),
+          shopkeeperId: customer.userId,
+          createdAt: customer.createdAt.toISOString(),
         };
       } catch {
         markDatabaseOffline();
@@ -254,3 +289,4 @@ export class CustomerService {
     memoryCustomerStore.reset();
   }
 }
+
