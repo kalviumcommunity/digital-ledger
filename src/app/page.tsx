@@ -7,3 +7,4 @@ export default async function HomePage() {
   const user = await getCurrentUser();
   redirect(user ? "/transactions" : "/login");
 }
+
