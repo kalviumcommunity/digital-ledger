@@ -18,6 +18,18 @@ const nextConfig: NextConfig = {
     "127.0.0.1",
     "127.0.0.1:3000",
   ],
+  async rewrites() {
+    return [
+      {
+        source: "/api/login",
+        destination: "/api/auth/login",
+      },
+      {
+        source: "/api/register",
+        destination: "/api/auth/register",
+      },
+    ];
+  },
 };
 
 export default nextConfig;
