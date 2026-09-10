@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Calendar, X, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import type { AddTransactionPayload, PaymentMethod, TransactionType } from '@/app/dashboard/types';
-import { MOCK_CUSTOMERS } from '@/app/dashboard/mockData';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Calendar, X, Loader2, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import type { AddTransactionPayload, DashboardCustomer, PaymentMethod, TransactionType } from '@/app/dashboard/types';
+import { fetchCustomersFromApi } from '@/lib/api/customerClient';
 
 interface AddTransactionModalProps {
   isOpen: boolean;
@@ -36,14 +36,53 @@ function AddTransactionForm({
   const [date, setDate] = useState(getLocalDateTimeString);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [description, setDescription] = useState('');
-  
+
+  // Dynamic Customers State (from Person 1 Customer API)
+  const [customers, setCustomers] = useState<DashboardCustomer[]>([]);
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(true);
+  const [customerError, setCustomerError] = useState<string | null>(null);
+
   // Component States
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const selectedCustomer = MOCK_CUSTOMERS.find((c) => c.id === customerId);
+  const fetchCustomers = useCallback(() => {
+    setIsLoadingCustomers(true);
+    setCustomerError(null);
+    fetchCustomersFromApi()
+      .then((data) => {
+        setCustomers(data);
+        setIsLoadingCustomers(false);
+      })
+      .catch((err: unknown) => {
+        setCustomerError(err instanceof Error ? err.message : 'Failed to load customers from API');
+        setIsLoadingCustomers(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+    fetchCustomersFromApi()
+      .then((data) => {
+        if (!ignore) {
+          setCustomers(data);
+          setIsLoadingCustomers(false);
+        }
+      })
+      .catch((err: unknown) => {
+        if (!ignore) {
+          setCustomerError(err instanceof Error ? err.message : 'Failed to load customers from API');
+          setIsLoadingCustomers(false);
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  const selectedCustomer = customers.find((c) => c.id === customerId);
 
   const handleClose = () => {
     onClose();
@@ -51,10 +90,12 @@ function AddTransactionForm({
 
   const validate = (): boolean => {
     const e: Record<string, string> = {};
-    
+
     // Customer validation
     if (!customerId) {
       e.customerId = 'Customer is required';
+    } else if (customers.length > 0 && !customers.some((c) => c.id === customerId)) {
+      e.customerId = 'Selected customer is invalid';
     }
 
     // Type validation
@@ -95,6 +136,7 @@ function AddTransactionForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting || submitSuccess) return;
     setSubmitError(null);
 
     if (!validate()) return;
@@ -113,7 +155,7 @@ function AddTransactionForm({
       };
 
       await onSubmit(payload);
-      
+
       setSubmitSuccess(true);
       setTimeout(() => {
         handleClose();
@@ -147,6 +189,23 @@ function AddTransactionForm({
           </button>
         </div>
 
+        {/* Customer API Error Banner */}
+        {customerError && (
+          <div className="mx-6 mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-2.5 text-amber-800 text-xs font-semibold">
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertCircle size={16} className="text-amber-600 shrink-0" />
+              <span className="truncate">{customerError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={fetchCustomers}
+              className="inline-flex items-center gap-1 text-xs font-bold text-amber-900 bg-amber-200/70 hover:bg-amber-200 px-2 py-1 rounded-lg transition"
+            >
+              <RefreshCw size={12} /> Retry
+            </button>
+          </div>
+        )}
+
         {/* Success Feedback Banner */}
         {submitSuccess && (
           <div className="mx-6 mt-4 p-3 bg-green-50 border border-green-200 rounded-xl flex items-center gap-2.5 text-green-800 text-xs font-semibold">
@@ -155,7 +214,7 @@ function AddTransactionForm({
           </div>
         )}
 
-        {/* Error Feedback Banner */}
+        {/* Submission Error Feedback Banner */}
         {submitError && (
           <div className="mx-6 mt-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2.5 text-red-800 text-xs font-semibold">
             <AlertCircle size={16} className="text-red-600 shrink-0" />
@@ -166,13 +225,20 @@ function AddTransactionForm({
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
           {/* Customer Selection */}
           <div>
-            <label htmlFor="add-tx-customer" className="block text-xs font-semibold text-gray-700 mb-1.5">
-              Customer <span className="text-red-500">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label htmlFor="add-tx-customer" className="block text-xs font-semibold text-gray-700">
+                Customer <span className="text-red-500">*</span>
+              </label>
+              {isLoadingCustomers && (
+                <span className="text-[11px] text-gray-400 flex items-center gap-1">
+                  <Loader2 size={11} className="animate-spin" /> Loading customers...
+                </span>
+              )}
+            </div>
             <select
               id="add-tx-customer"
               value={customerId}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isLoadingCustomers}
               onChange={(e) => {
                 setCustomerId(e.target.value);
                 if (errors.customerId) {
@@ -187,10 +253,16 @@ function AddTransactionForm({
                 errors.customerId ? 'border-red-400 bg-red-50/30' : 'border-gray-300'
               }`}
             >
-              <option value="">Select customer…</option>
-              {MOCK_CUSTOMERS.map((c) => (
+              {isLoadingCustomers ? (
+                <option value="">Loading customer list…</option>
+              ) : customers.length === 0 ? (
+                <option value="">No customers found</option>
+              ) : (
+                <option value="">Select customer…</option>
+              )}
+              {customers.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.name} ({c.phone})
+                  {c.name} {c.phone ? `(${c.phone})` : ''}
                 </option>
               ))}
             </select>
@@ -472,5 +544,3 @@ export default function AddTransactionModal({
     />
   );
 }
-
-

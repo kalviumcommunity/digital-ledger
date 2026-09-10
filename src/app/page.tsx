@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import DashboardHeader from '@/components/dashboard/DashboardHeader';
 import BalanceCard from '@/components/dashboard/BalanceCard';
 import CreditGivenCard from '@/components/dashboard/CreditGivenCard';
@@ -10,21 +10,37 @@ import AddTransactionModal from '@/components/dashboard/AddTransactionModal';
 import EditTransactionModal from '@/components/dashboard/EditTransactionModal';
 import DeleteConfirmModal from '@/components/dashboard/DeleteConfirmModal';
 import {
-  MOCK_SUMMARY,
   MOCK_CUSTOMERS,
   MOCK_TRANSACTIONS,
 } from '@/app/dashboard/mockData';
+import { fetchCustomersFromApi } from '@/lib/api/customerClient';
+import { fetchTransactionsFromApi, fetchTransactionSummaryFromApi } from '@/lib/api/transactionClient';
+import { calculateFinancialSummary } from '@/lib/utils/financial';
 import type {
+  DashboardCustomer,
   DashboardTransaction,
   AddTransactionPayload,
+  PaginationMeta,
 } from '@/app/dashboard/types';
 
 export default function DashboardPage() {
   const [transactions, setTransactions] =
     useState<DashboardTransaction[]>(MOCK_TRANSACTIONS);
-  const [summary] = useState(MOCK_SUMMARY);
+  const [customers, setCustomers] =
+    useState<DashboardCustomer[]>(MOCK_CUSTOMERS);
   const [headerSearch, setHeaderSearch] = useState('');
   const [headerFilter, setHeaderFilter] = useState<'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN'>('ALL');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [paginationMeta, setPaginationMeta] = useState<PaginationMeta>({
+    page: 1,
+    limit: 10,
+    total: MOCK_TRANSACTIONS.length,
+    totalPages: Math.ceil(MOCK_TRANSACTIONS.length / 10),
+  });
+
+  const [isLoadingTxns, setIsLoadingTxns] = useState(true);
+  const [txnError, setTxnError] = useState<string | null>(null);
+  const [serverSummary, setServerSummary] = useState<{ balance: number; creditGiven: number } | null>(null);
 
   // Modal state
   const [showAddModal, setShowAddModal] = useState(false);
@@ -32,33 +48,203 @@ export default function DashboardPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedTx, setSelectedTx] = useState<DashboardTransaction | null>(null);
 
+  // Load summary from API
+  const loadSummary = useCallback(() => {
+    fetchTransactionSummaryFromApi()
+      .then((data) => {
+        setServerSummary({ balance: data.balance, creditGiven: data.creditGiven });
+      })
+      .catch(() => {
+        // Fallback to client-side precision calculation
+      });
+  }, []);
+
+  // Load real transactions with backend pagination, search, and filtering
+  const loadTransactions = useCallback(
+    (page: number, search: string, filter: 'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN', signal?: AbortSignal) => {
+      setIsLoadingTxns(true);
+      setTxnError(null);
+
+      fetchTransactionsFromApi({
+        page,
+        limit: 10,
+        search: search.trim() || undefined,
+        type: filter,
+        sortBy: 'date',
+        sortOrder: 'desc',
+        signal,
+      })
+        .then((res) => {
+          setTransactions(res.transactions);
+          setPaginationMeta(res.meta);
+          setIsLoadingTxns(false);
+        })
+        .catch((err: unknown) => {
+          if (err instanceof Error && err.name === 'AbortError') {
+            return; // Ignore aborted requests
+          }
+          setTxnError(err instanceof Error ? err.message : 'Failed to fetch transactions from server');
+          setIsLoadingTxns(false);
+        });
+    },
+    []
+  );
+
+  // Fetch customers once on mount
+  useEffect(() => {
+    let ignore = false;
+    fetchCustomersFromApi()
+      .then((data) => {
+        if (!ignore && data.length > 0) {
+          setCustomers(data);
+        }
+      })
+      .catch(() => {
+        // Fallback to initial mock customers
+      });
+
+    loadSummary();
+
+    return () => {
+      ignore = true;
+    };
+  }, [loadSummary]);
+
+  // Fetch transactions with debouncing on search / filter / page change & cancellation
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const timer = setTimeout(() => {
+      loadTransactions(currentPage, headerSearch, headerFilter, controller.signal);
+    }, 150);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [currentPage, headerSearch, headerFilter, loadTransactions]);
+
+  // Compute live summary metrics with precision arithmetic
+  const summary = useMemo(() => {
+    if (serverSummary && transactions.length === 0) {
+      return serverSummary;
+    }
+    return calculateFinancialSummary(transactions);
+  }, [transactions, serverSummary]);
+
   // ── Handlers ──────────────────────────────────────────────────────────────
 
-  const handleAddSubmit = (payload: AddTransactionPayload) => {
-    const customer = MOCK_CUSTOMERS.find((c) => c.id === payload.customerId);
-    if (!customer) return;
-    const newTx: DashboardTransaction = {
-      id: `txn-${Date.now()}`,
-      customerId: payload.customerId,
-      customerName: customer.name,
-      customerPhone: customer.phone,
-      type: payload.type,
-      amount: payload.amount,
-      paymentMethod: payload.paymentMethod,
-      description: payload.description,
-      createdAt: payload.date,
-    };
-    setTransactions((prev) => [newTx, ...prev]);
-  };
+  const handleAddSubmit = async (payload: AddTransactionPayload) => {
+    const res = await fetch('/api/transactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerId: payload.customerId,
+        type: payload.type,
+        amount: payload.amount,
+        date: payload.date,
+        paymentMethod: payload.paymentMethod,
+        note: payload.description,
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      const errorMsg =
+        json?.error?.details?.[0]?.message ||
+        json?.error?.message ||
+        'Failed to create transaction';
+      throw new Error(errorMsg);
+    }
 
-  const handleEditSubmit = (id: string, updates: Partial<DashboardTransaction>) => {
-    setTransactions((prev) =>
-      prev.map((tx) => (tx.id === id ? { ...tx, ...updates } : tx))
+    // Refresh transactions and summary from API
+    setCurrentPage(1);
+    loadTransactions(1, headerSearch, headerFilter);
+    loadSummary();
+
+    // Update customer metrics in Customer panel
+    setCustomers((prev) =>
+      prev.map((c) => {
+        if (c.id === payload.customerId) {
+          const delta = payload.type === 'CREDIT_GIVEN' ? payload.amount : -payload.amount;
+          return {
+            ...c,
+            amountDue: Math.max(0, c.amountDue + delta),
+            transactionCount: (c.transactionCount || 0) + 1,
+          };
+        }
+        return c;
+      })
     );
   };
 
-  const handleDeleteConfirm = (id: string) => {
+  const handleEditSubmit = async (id: string, updates: Partial<DashboardTransaction>) => {
+    const res = await fetch(`/api/transactions/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: updates.type,
+        amount: updates.amount,
+        date: updates.createdAt,
+        paymentMethod: updates.paymentMethod,
+        note: updates.description,
+      }),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.success === false) {
+      const errorMsg =
+        json?.error?.details?.[0]?.message ||
+        json?.error?.message ||
+        'Failed to update transaction';
+      throw new Error(errorMsg);
+    }
+
+    // Update local list, reload transactions & sync summary
+    setTransactions((prev) =>
+      prev.map((tx) => (tx.id === id ? { ...tx, ...updates } : tx))
+    );
+    loadTransactions(currentPage, headerSearch, headerFilter);
+    loadSummary();
+  };
+
+  const handleDeleteConfirm = async (id: string) => {
+    const res = await fetch(`/api/transactions/${id}`, {
+      method: 'DELETE',
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.success === false) {
+      const errorMsg =
+        json?.error?.details?.[0]?.message ||
+        json?.error?.message ||
+        'Failed to delete transaction';
+      throw new Error(errorMsg);
+    }
+
+    // Update local list and sync summary
     setTransactions((prev) => prev.filter((tx) => tx.id !== id));
+    loadTransactions(currentPage, headerSearch, headerFilter);
+    loadSummary();
+  };
+
+  const handleSearchChange = (s: string) => {
+    setHeaderSearch(s);
+    setCurrentPage(1);
+  };
+
+  const handleFilterChange = (f: 'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN') => {
+    setHeaderFilter(f);
+    setCurrentPage(1);
+  };
+
+  const handleClearFilters = () => {
+    setHeaderSearch('');
+    setHeaderFilter('ALL');
+    setCurrentPage(1);
+  };
+
+  const handlePageChange = (p: number) => {
+    setCurrentPage(p);
   };
 
   const openEdit = (tx: DashboardTransaction) => {
@@ -71,16 +257,14 @@ export default function DashboardPage() {
     setShowDeleteModal(true);
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-
   return (
     <div className="flex flex-col bg-white min-h-screen">
       {/* Header */}
       <DashboardHeader
         searchQuery={headerSearch}
-        onSearchChange={setHeaderSearch}
+        onSearchChange={handleSearchChange}
         filterType={headerFilter}
-        onFilterChange={setHeaderFilter}
+        onFilterChange={handleFilterChange}
       />
 
       {/* Main content */}
@@ -99,7 +283,7 @@ export default function DashboardPage() {
 
             {/* Customer panel — fills remaining height */}
             <div className="flex-1 min-h-0">
-              <CustomerPanel customers={MOCK_CUSTOMERS} />
+              <CustomerPanel customers={customers} />
             </div>
           </div>
 
@@ -109,7 +293,17 @@ export default function DashboardPage() {
               transactions={transactions}
               initialSearch={headerSearch}
               filterType={headerFilter}
-              onFilterChange={setHeaderFilter}
+              meta={paginationMeta}
+              isLoading={isLoadingTxns}
+              error={txnError}
+              onRetry={() => {
+                loadTransactions(currentPage, headerSearch, headerFilter);
+                loadSummary();
+              }}
+              onSearchChange={handleSearchChange}
+              onFilterChange={handleFilterChange}
+              onClearFilters={handleClearFilters}
+              onPageChange={handlePageChange}
               onAddTransaction={() => setShowAddModal(true)}
               onEditTransaction={openEdit}
               onDeleteTransaction={openDelete}

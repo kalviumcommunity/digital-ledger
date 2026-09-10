@@ -7,14 +7,13 @@ interface EditTransactionModalProps {
   isOpen: boolean;
   transaction: DashboardTransaction | null;
   onClose: () => void;
-  onSubmit: (id: string, updates: Partial<DashboardTransaction>) => void;
+  onSubmit: (id: string, updates: Partial<DashboardTransaction>) => Promise<void> | void;
 }
 
 const TYPE_OPTIONS: { value: TransactionType; label: string }[] = [
   { value: 'PAYMENT_RECEIVED', label: 'Payment Received' },
   { value: 'CREDIT_GIVEN', label: 'Credit Given' },
 ];
-
 
 // Inner form — fresh mount per transaction open (no useEffect setState needed)
 function EditForm({
@@ -24,7 +23,7 @@ function EditForm({
 }: {
   transaction: DashboardTransaction;
   onClose: () => void;
-  onSubmit: (id: string, updates: Partial<DashboardTransaction>) => void;
+  onSubmit: (id: string, updates: Partial<DashboardTransaction>) => Promise<void> | void;
 }) {
   const [amount, setAmount] = useState(
     Number(transaction.amount).toLocaleString('en-IN', {
@@ -38,27 +37,43 @@ function EditForm({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
 
   const validate = (): boolean => {
     const e: Record<string, string> = {};
-    const rawAmount = amount.replace(/,/g, '');
-    if (!rawAmount) e.amount = 'Amount is required';
-    else if (isNaN(Number(rawAmount))) e.amount = 'Must be numeric';
-    else if (Number(rawAmount) <= 0) e.amount = 'Must be > 0';
+    const rawAmount = amount.replace(/,/g, '').trim();
+    if (!rawAmount) {
+      e.amount = 'Amount is required';
+    } else if (isNaN(Number(rawAmount))) {
+      e.amount = 'Amount must be numeric';
+    } else if (Number(rawAmount) <= 0) {
+      e.amount = 'Amount must be greater than zero';
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!validate()) return;
-    onSubmit(transaction.id, {
-      type,
-      amount: Number(amount.replace(/,/g, '')),
-      paymentMethod,
-      description: description.trim() || undefined,
-    });
-    onClose();
+
+    setIsSubmitting(true);
+    setServerError(null);
+
+    try {
+      await onSubmit(transaction.id, {
+        type,
+        amount: Number(amount.replace(/,/g, '').trim()),
+        paymentMethod,
+        description: description.trim() || undefined,
+      });
+      onClose();
+    } catch (err: unknown) {
+      setServerError(err instanceof Error ? err.message : 'Failed to update transaction');
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -165,22 +180,43 @@ function EditForm({
               </div>
             </div>
 
+            {serverError && (
+              <div
+                id="edit-tx-server-error"
+                className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 font-medium"
+              >
+                {serverError}
+              </div>
+            )}
+
             {/* Actions */}
             <div className="flex gap-3 pt-1">
               <button
                 id="edit-tx-cancel"
                 type="button"
                 onClick={onClose}
-                className="flex-1 h-11 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 transition"
+                disabled={isSubmitting}
+                className="flex-1 h-11 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 disabled:opacity-50 transition"
               >
                 Cancel
               </button>
               <button
                 id="edit-tx-submit"
                 type="submit"
-                className="flex-1 h-11 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 transition"
+                disabled={isSubmitting}
+                className="flex-1 h-11 bg-gray-900 text-white rounded-lg text-sm font-semibold hover:bg-gray-800 disabled:opacity-50 transition flex items-center justify-center gap-2"
               >
-                Submit
+                {isSubmitting ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Updating...
+                  </>
+                ) : (
+                  'Submit'
+                )}
               </button>
             </div>
           </form>
