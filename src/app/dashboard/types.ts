@@ -23,6 +23,9 @@ export interface DashboardCustomer {
   name: string;
   phone: string;
   amountDue: number;
+  totalCredit?: number;
+  totalPaid?: number;
+  transactionCount?: number;
 }
 
 export interface DashboardSummary {

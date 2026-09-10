@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { Plus, X } from 'lucide-react';
 import type { DashboardTransaction, PaginationMeta } from '@/app/dashboard/types';
 import { formatDateGroup } from '@/app/dashboard/mockData';
+import { downloadTransactionInvoice } from '@/lib/api/invoiceClient';
 import TransactionRow from './TransactionRow';
 import Pagination from './Pagination';
 
@@ -12,6 +13,10 @@ interface TransactionHistoryProps {
   initialSearch?: string;
   filterType?: 'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN';
   onFilterChange?: (t: 'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN') => void;
+  onSearchChange?: (s: string) => void;
+  onClearFilters?: () => void;
+  onPageChange?: (p: number) => void;
+  meta?: PaginationMeta;
   isLoading?: boolean;
   error?: string | null;
   onRetry?: () => void;
@@ -27,6 +32,10 @@ export default function TransactionHistory({
   initialSearch = '',
   filterType: controlledFilterType,
   onFilterChange,
+  onSearchChange,
+  onClearFilters,
+  onPageChange: controlledOnPageChange,
+  meta: controlledMeta,
   isLoading = false,
   error = null,
   onRetry,
@@ -34,45 +43,36 @@ export default function TransactionHistory({
   onEditTransaction,
   onDeleteTransaction,
 }: TransactionHistoryProps) {
-  const [search, setSearch] = useState(initialSearch);
+  const [internalSearch, setInternalSearch] = useState(initialSearch);
   const [internalFilterType, setInternalFilterType] = useState<'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN'>('ALL');
   const [filterOpen, setFilterOpen] = useState(false);
-  const [page, setPage] = useState(1);
+  const [internalPage, setInternalPage] = useState(1);
+  const [downloadingTxId, setDownloadingTxId] = useState<string | null>(null);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
 
+  const search = onSearchChange ? initialSearch : internalSearch;
   const activeFilterType = controlledFilterType !== undefined ? controlledFilterType : internalFilterType;
 
-  // ── Filtering ─────────────────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    return transactions.filter((tx) => {
-      const matchSearch =
-        !search ||
-        tx.customerName.toLowerCase().includes(search.toLowerCase()) ||
-        tx.customerPhone.includes(search) ||
-        (tx.description ?? '').toLowerCase().includes(search.toLowerCase());
+  const handleSearchInput = (val: string) => {
+    setInternalSearch(val);
+    onSearchChange?.(val);
+  };
 
-      const matchType =
-        activeFilterType === 'ALL' || tx.type === activeFilterType;
+  const handleFilterSelect = (type: 'ALL' | 'PAYMENT_RECEIVED' | 'CREDIT_GIVEN') => {
+    setInternalFilterType(type);
+    onFilterChange?.(type);
+    setFilterOpen(false);
+  };
 
-      return matchSearch && matchType;
-    });
-  }, [transactions, search, activeFilterType]);
-
-  // ── Pagination ────────────────────────────────────────────────────────────
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-
-  const paginationMeta: PaginationMeta = {
-    page: safePage,
-    limit: PAGE_SIZE,
-    total: filtered.length,
-    totalPages,
+  const handlePageSelect = (p: number) => {
+    setInternalPage(p);
+    controlledOnPageChange?.(p);
   };
 
   // ── Date grouping ─────────────────────────────────────────────────────────
   const grouped = useMemo(() => {
     const groups: { date: string; items: DashboardTransaction[] }[] = [];
-    paginated.forEach((tx) => {
+    transactions.forEach((tx) => {
       const dateLabel = formatDateGroup(tx.createdAt);
       const existing = groups.find((g) => g.date === dateLabel);
       if (existing) {
@@ -82,10 +82,28 @@ export default function TransactionHistory({
       }
     });
     return groups;
-  }, [paginated]);
+  }, [transactions]);
 
-  const handleInvoice = (tx: DashboardTransaction) => {
-    alert(`Downloading invoice for Transaction #${tx.id} — ${tx.customerName}`);
+  const fallbackPaginationMeta: PaginationMeta = {
+    page: internalPage,
+    limit: PAGE_SIZE,
+    total: transactions.length,
+    totalPages: Math.max(1, Math.ceil(transactions.length / PAGE_SIZE)),
+  };
+
+  const paginationMeta = controlledMeta || fallbackPaginationMeta;
+
+  const handleInvoice = async (tx: DashboardTransaction) => {
+    try {
+      setInvoiceError(null);
+      setDownloadingTxId(tx.id);
+      await downloadTransactionInvoice(tx.id, tx.customerName);
+    } catch (err: unknown) {
+      console.error('Invoice download failed:', err);
+      setInvoiceError(err instanceof Error ? err.message : 'Failed to download invoice');
+    } finally {
+      setDownloadingTxId(null);
+    }
   };
 
   const handleAuditTrail = (tx: DashboardTransaction) => {
@@ -130,16 +148,13 @@ export default function TransactionHistory({
               type="text"
               placeholder="Name or Phone Number"
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
+              onChange={(e) => handleSearchInput(e.target.value)}
               className="pl-7 pr-7 h-8 w-56 border border-gray-400 rounded-md text-xs text-gray-800 placeholder-gray-400 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-gray-400 transition"
             />
             {search && (
               <button
                 type="button"
-                onClick={() => setSearch('')}
+                onClick={() => handleSearchInput('')}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
               >
                 <X size={11} />
@@ -178,12 +193,7 @@ export default function TransactionHistory({
                     key={t}
                     id={`filter-type-${t}`}
                     type="button"
-                    onClick={() => {
-                      setInternalFilterType(t);
-                      onFilterChange?.(t);
-                      setPage(1);
-                      setFilterOpen(false);
-                    }}
+                    onClick={() => handleFilterSelect(t)}
                     className={`w-full text-left px-3 py-2 text-xs transition ${
                       activeFilterType === t
                         ? 'bg-gray-100 font-bold text-gray-900'
@@ -198,6 +208,28 @@ export default function TransactionHistory({
           </div>
         </div>
       </div>
+
+      {/* ── Invoice Error Banner ────────────────────────────────────────── */}
+      {invoiceError && (
+        <div className="mb-2.5 p-2.5 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between text-xs text-red-700 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-red-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <span className="font-medium">{invoiceError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setInvoiceError(null)}
+            className="text-red-500 hover:text-red-700 font-bold ml-2 px-1 text-sm leading-none"
+            title="Dismiss error"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* ── Transaction list — scrollable ─────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 -mr-1">
@@ -239,10 +271,36 @@ export default function TransactionHistory({
             )}
           </div>
         ) : grouped.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-40 text-center">
-            <p className="text-sm text-gray-400 font-medium">No transactions found</p>
-            {search && (
-              <p className="text-xs text-gray-300 mt-1">No results for &quot;{search}&quot;</p>
+          <div className="flex flex-col items-center justify-center h-48 text-center px-4">
+            <div className="w-10 h-10 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center mb-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+            </div>
+            <p className="text-sm font-semibold text-gray-800">No transactions found</p>
+            {search || activeFilterType !== 'ALL' ? (
+              <>
+                <p className="text-xs text-gray-500 mt-1 max-w-xs">
+                  No records match {search ? `"${search}"` : ''}
+                  {search && activeFilterType !== 'ALL' ? ' with ' : ''}
+                  {activeFilterType !== 'ALL' ? (activeFilterType === 'PAYMENT_RECEIVED' ? 'Payment Received' : 'Credit Given') : ''}.
+                </p>
+                <button
+                  id="clear-filters-btn"
+                  type="button"
+                  onClick={() => {
+                    handleSearchInput('');
+                    handleFilterSelect('ALL');
+                    onClearFilters?.();
+                  }}
+                  className="mt-3 px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition"
+                >
+                  Clear search & filters
+                </button>
+              </>
+            ) : (
+              <p className="text-xs text-gray-400 mt-1">No transactions recorded yet.</p>
             )}
           </div>
         ) : (
@@ -258,6 +316,7 @@ export default function TransactionHistory({
                 <TransactionRow
                   key={tx.id}
                   transaction={tx}
+                  isDownloadingInvoice={downloadingTxId === tx.id}
                   onEdit={onEditTransaction}
                   onDelete={onDeleteTransaction}
                   onInvoice={handleInvoice}
@@ -270,9 +329,9 @@ export default function TransactionHistory({
       </div>
 
       {/* ── Pagination ────────────────────────────────────────────────────── */}
-      {filtered.length > PAGE_SIZE && (
+      {(paginationMeta.totalPages > 1 || paginationMeta.total > paginationMeta.limit) && (
         <div className="pt-2 border-t border-gray-100">
-          <Pagination meta={paginationMeta} onPageChange={(p) => setPage(p)} />
+          <Pagination meta={paginationMeta} onPageChange={handlePageSelect} />
         </div>
       )}
     </div>
