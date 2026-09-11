@@ -30,7 +30,7 @@ export async function isDatabaseReachable(): Promise<boolean> {
 
     const reachable = await new Promise<boolean>((resolve) => {
       const socket = new net.Socket();
-      socket.setTimeout(250);
+      socket.setTimeout(2500);
 
       socket.on('connect', () => {
         socket.destroy();
