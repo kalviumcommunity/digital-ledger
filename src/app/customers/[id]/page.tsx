@@ -28,7 +28,7 @@ import {
 } from "@/components/LedgerModals";
 import { getCurrentUserAction } from "@/app/actions/auth";
 import { getLedgerData } from "@/app/actions/ledger";
-import { formatDateTime, formatINR } from "@/lib/format";
+import { formatDateTime, formatINR, roundMoney } from "@/lib/format";
 import type { CurrentUser, CustomerLedgerData, SerializedTransaction } from "@/lib/types";
 
 export default function CustomerLedgerPage() {
@@ -39,6 +39,7 @@ export default function CustomerLedgerPage() {
   const [data, setData] = useState<CustomerLedgerData | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLiveSyncing, setIsLiveSyncing] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
   const [editTx, setEditTx] = useState<SerializedTransaction | null>(null);
@@ -47,22 +48,34 @@ export default function CustomerLedgerPage() {
   const [invoiceTx, setInvoiceTx] = useState<SerializedTransaction | null>(null);
   const [noticeOpen, setNoticeOpen] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    const [me, result] = await Promise.all([
-      getCurrentUserAction(),
-      getLedgerData(customerId),
-    ]);
-    if (result.success) {
-      setData(result.data);
-      setLoadError(null);
-    } else {
-      setData(null);
-      setLoadError(result.error);
-    }
-    if (me) setUser(me);
-    setLoading(false);
-  }, [customerId]);
+  const mountedRef = React.useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const fetchData = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      const [me, result] = await Promise.all([
+        getCurrentUserAction(),
+        getLedgerData(customerId),
+      ]);
+      if (!mountedRef.current) return;
+      if (result.success) {
+        setData(result.data);
+        setLoadError(null);
+      } else if (!silent) {
+        setData(null);
+        setLoadError(result.error);
+      }
+      if (me) setUser(me);
+      if (!silent) setLoading(false);
+    },
+    [customerId]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -73,6 +86,147 @@ export default function CustomerLedgerPage() {
       cancelled = true;
     };
   }, [fetchData]);
+
+  // Live real-time synchronization with Person 2's /api/transactions endpoint
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+
+    const performSync = async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      if (!mountedRef.current) return;
+
+      const ledgerId = data?.ledgerId || customerId;
+      if (!ledgerId) return;
+
+      try {
+        setIsLiveSyncing(true);
+        const res = await fetch(
+          `/api/transactions?ledgerId=${encodeURIComponent(ledgerId)}&limit=100`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              ...(user?.id ? { "x-user-id": user.id, "x-shopkeeper-id": user.id } : {}),
+            },
+            credentials: "include",
+          }
+        );
+
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.data) && mountedRef.current) {
+            const apiTxs = json.data;
+            const newTransactions: SerializedTransaction[] = apiTxs
+              .filter((tx: { isDeleted?: boolean }) => !tx.isDeleted)
+              .map((tx: {
+                id: string;
+                ledgerId: string;
+                type: "CREDIT" | "DEBIT";
+                amount: number;
+                paymentMethod?: string | null;
+                note?: string | null;
+                version?: number;
+                createdAt: string | Date;
+                updatedAt: string | Date;
+                ledger?: { id: string; title: string };
+              }) => ({
+                id: tx.id,
+                ledgerId: tx.ledgerId,
+                customerId,
+                customerName: data?.customerName || tx.ledger?.title || "Customer",
+                customerPhone: data?.customerPhone || null,
+                type: tx.type === "DEBIT" ? "DEBIT" : "CREDIT",
+                amount: roundMoney(Number(tx.amount)),
+                note: tx.note || null,
+                method: tx.paymentMethod || "Cash",
+                version: tx.version ?? 1,
+                isDeleted: false,
+                lockedBy: null,
+                lockedAt: null,
+                createdAt:
+                  typeof tx.createdAt === "string"
+                    ? tx.createdAt
+                    : new Date(tx.createdAt).toISOString(),
+                updatedAt:
+                  typeof tx.updatedAt === "string"
+                    ? tx.updatedAt
+                    : new Date(tx.updatedAt).toISOString(),
+              }));
+
+            newTransactions.sort(
+              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+
+            let totalCredit = 0;
+            let totalPaid = 0;
+            for (const tx of newTransactions) {
+              if (tx.type === "CREDIT") totalCredit += tx.amount;
+              else totalPaid += tx.amount;
+            }
+            totalCredit = roundMoney(totalCredit);
+            totalPaid = roundMoney(totalPaid);
+            const amountDue = roundMoney(totalCredit - totalPaid);
+
+            setData((prev) => {
+              if (!prev) return prev;
+              const prevKey = prev.transactions
+                .map((t) => `${t.id}:${t.version}:${t.amount}:${t.type}`)
+                .join("|");
+              const newKey = newTransactions
+                .map((t) => `${t.id}:${t.version}:${t.amount}:${t.type}`)
+                .join("|");
+              if (prevKey === newKey && prev.summary.amountDue === amountDue) {
+                return prev;
+              }
+              return {
+                ...prev,
+                totalBalance: amountDue,
+                summary: {
+                  totalCredit,
+                  totalPaid,
+                  amountDue,
+                  transactionCount: newTransactions.length,
+                },
+                transactions: newTransactions,
+              };
+            });
+          }
+        } else {
+          // Fallback to server action
+          const result = await getLedgerData(customerId);
+          if (result.success && mountedRef.current) {
+            setData(result.data);
+          }
+        }
+      } catch (err) {
+        console.warn("Live sync polling encountered error:", err);
+      } finally {
+        if (mountedRef.current) {
+          setIsLiveSyncing(false);
+        }
+      }
+    };
+
+    // Poll every 4 seconds for live updates
+    timer = setInterval(() => {
+      void performSync();
+    }, 4000);
+
+    // Sync immediately upon tab refocus or window visibility
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        void performSync();
+      }
+    };
+
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+
+    return () => {
+      if (timer) clearInterval(timer);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+    };
+  }, [customerId, data?.customerName, data?.customerPhone, data?.ledgerId, user?.id]);
 
   const balance = data?.summary.amountDue ?? 0;
 
@@ -112,6 +266,17 @@ export default function CustomerLedgerPage() {
                     </h1>
                     <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                       Customer
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border transition-colors ${
+                        isLiveSyncing
+                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                          : "bg-emerald-50 text-emerald-700 border-emerald-200/70"
+                      }`}
+                      title="Real-time live synchronization connected with backend"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Live Sync
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
@@ -188,9 +353,16 @@ export default function CustomerLedgerPage() {
                 <h2 className="text-base font-bold text-slate-900">
                   Transaction History
                 </h2>
-                <span className="text-xs text-slate-500 font-medium print:hidden">
-                  {data.summary.transactionCount} total entries
-                </span>
+                <div className="flex items-center gap-2.5 print:hidden">
+                  <span className="inline-flex items-center gap-1.5 text-xs text-slate-400 font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Live Polling
+                  </span>
+                  <span className="text-slate-300">•</span>
+                  <span className="text-xs text-slate-500 font-medium">
+                    {data.summary.transactionCount} total entries
+                  </span>
+                </div>
               </div>
 
               {data.transactions.length === 0 ? (
