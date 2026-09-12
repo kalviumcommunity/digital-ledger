@@ -7,10 +7,13 @@ import { Eye, EyeOff } from "lucide-react";
 export default function RegisterPage() {
   const router = useRouter();
 
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [mobile, setMobile] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -18,13 +21,18 @@ export default function RegisterPage() {
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!email.trim() || !mobile.trim() || !password) {
+    if (!name.trim() || !email.trim() || !mobile.trim() || !password || !confirmPassword) {
       setMessage("All fields are required.");
       return;
     }
 
     if (password.length < 6) {
       setMessage("Password must be at least 6 characters.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setMessage("Passwords do not match.");
       return;
     }
 
@@ -38,9 +46,11 @@ export default function RegisterPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          name: name.trim(),
           email: email.trim(),
           mobile: mobile.trim(),
           password,
+          confirmPassword,
         }),
       });
 
@@ -74,6 +84,18 @@ export default function RegisterPage() {
 
         <form onSubmit={handleRegister} className="w-full">
           <label className="self-start text-black font-bold mb-2 text-sm block">
+            FULL NAME
+          </label>
+
+          <input
+            type="text"
+            placeholder="Enter your full name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="shadow-sm h-14 text-sm text-black border rounded-lg p-3 w-full mb-4 focus:outline-none focus:ring-2 focus:ring-red-800"
+          />
+
+          <label className="self-start text-black font-bold mb-2 text-sm block">
             EMAIL ADDRESS
           </label>
 
@@ -101,7 +123,7 @@ export default function RegisterPage() {
             PASSWORD
           </label>
 
-          <div className="relative w-full mb-6">
+          <div className="relative w-full mb-4">
             <input
               type={showPassword ? "text" : "password"}
               placeholder="Create a password"
@@ -117,6 +139,29 @@ export default function RegisterPage() {
               aria-label={showPassword ? "Hide password" : "Show password"}
             >
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+            </button>
+          </div>
+
+          <label className="self-start text-black font-bold mb-2 text-sm block">
+            CONFIRM PASSWORD
+          </label>
+
+          <div className="relative w-full mb-6">
+            <input
+              type={showConfirmPassword ? "text" : "password"}
+              placeholder="Confirm your password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="shadow-sm h-14 text-sm text-black border rounded-lg p-3 pr-12 w-full focus:outline-none focus:ring-2 focus:ring-red-800"
+            />
+            <button
+              type="button"
+              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+              className="absolute right-3 top-4 text-gray-500 hover:text-black focus:outline-none"
+              tabIndex={-1}
+              aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+            >
+              {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
             </button>
           </div>
 

@@ -63,6 +63,14 @@ export function findDevUserById(id: number) {
   return users.find((user) => user.id === id);
 }
 
+export function findDevUserByContact(email: string, mobile: string) {
+  return users.find((user) => user.email === email && user.mobile === mobile);
+}
+
+export async function updateDevUserPassword(user: DevUser, password: string) {
+  user.password = await bcrypt.hash(password, 10);
+}
+
 export function getDevCustomers() {
   const now = new Date();
   const records = [

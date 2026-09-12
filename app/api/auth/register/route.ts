@@ -8,12 +8,19 @@ import { createDevUser, findDevUser } from "../../../../lib/dev-users";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, email, mobile, password } = body;
+    const { name, email, mobile, password, confirmPassword } = body;
 
     // Validation
-    if (!email || !mobile || !password) {
+    if (!name || !email || !mobile || !password || !confirmPassword) {
       return NextResponse.json(
-        { success: false, message: "Email, mobile, and password are required." },
+        { success: false, message: "Full name, email, mobile, and both password fields are required." },
+        { status: 400 }
+      );
+    }
+
+    if (password !== confirmPassword) {
+      return NextResponse.json(
+        { success: false, message: "Passwords do not match." },
         { status: 400 }
       );
     }
