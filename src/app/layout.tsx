@@ -17,7 +17,11 @@ export const metadata: Metadata = {
   description: "Manage your business transactions, balances, and customer ledger with KhataBook.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html
       lang="en"

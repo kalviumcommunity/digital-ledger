@@ -9,8 +9,12 @@ export const metadata: Metadata = {
   title: "Customers — KhataBook",
 };
 
+interface CustomersPageProps {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}
+
 export default async function CustomersPage(
-  props: PageProps<"/customers">
+  props: CustomersPageProps
 ) {
   const query = await props.searchParams;
   const rawSearch = query?.search;

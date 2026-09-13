@@ -187,7 +187,7 @@ async function runThreePersonIntegration() {
 
   // 18. Verify Ledger updates on Delete
   const afterDelList = await (await listTransactions(new NextRequest(`http://localhost:3000/api/transactions?customerId=${customerId}`, { headers: { 'x-user-id': shopkeeperId } }))).json();
-  const deletedInList = afterDelList.data.some((t: { id: string }) => t.id === tx2Id && !t.isDeleted);
+  const deletedInList = afterDelList.data.some((t: { id: string; isDeleted?: boolean }) => t.id === tx2Id && !t.isDeleted);
   record(18, 'Customer Ledger Delete Sync', 'Person 3', !deletedInList, 'Customer Ledger still lists deleted transaction');
 
   // 19. Verify audit history behavior on Delete (Person 3)
