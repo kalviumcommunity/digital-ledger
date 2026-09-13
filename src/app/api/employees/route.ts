@@ -1,7 +1,6 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/auth";
-import bcrypt from "bcryptjs";
+import { getCurrentUser, hashPassword, verifyPassword } from "@/lib/auth";
 
 export async function GET() {
   try {
@@ -13,30 +12,24 @@ export async function GET() {
       );
     }
 
-    const shopkeeperId =
-      user.role === "SHOPKEEPER" ? user.id : (user.shopkeeperId ?? user.id);
-
     const shopkeeper = await prisma.user.findUnique({
-      where: { id: shopkeeperId },
+      where: { id: user.id },
       select: {
         id: true,
         name: true,
         email: true,
-        mobile: true,
         role: true,
       },
     });
 
     const employees = await prisma.user.findMany({
       where: {
-        shopkeeperId: shopkeeperId,
         role: "EMPLOYEE",
       },
       select: {
         id: true,
         name: true,
         email: true,
-        mobile: true,
         role: true,
         createdAt: true,
       },
@@ -80,7 +73,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { name, email, mobile, password, shopkeeperPassword } = body;
+    const { name, email, password, shopkeeperPassword } = body;
 
     // Verify Shopkeeper password to authorize action
     if (!shopkeeperPassword) {
@@ -104,7 +97,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const isOwnerPwValid = await bcrypt.compare(
+    const isOwnerPwValid = await verifyPassword(
       shopkeeperPassword,
       ownerRecord.password
     );
@@ -127,17 +120,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const cleanMobile = (mobile || "").trim().replace(/\s+/g, "");
-    if (!cleanMobile || cleanMobile.length < 10) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "A valid mobile number (at least 10 digits) is required.",
-        },
-        { status: 400 }
-      );
-    }
-
     const cleanEmail = (email || "").trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes("@")) {
       return NextResponse.json(
@@ -156,10 +138,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check email/mobile uniqueness
+    // Check email uniqueness
     const existingUser = await prisma.user.findFirst({
       where: {
-        OR: [{ email: cleanEmail }, { mobile: cleanMobile }],
+        email: cleanEmail,
       },
     });
 
@@ -167,28 +149,25 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           success: false,
-          message: "An account with this email or mobile number already exists.",
+          message: "An account with this email already exists.",
         },
         { status: 409 }
       );
     }
 
-    const hashedEmployeePw = await bcrypt.hash(password, 10);
+    const hashedEmployeePw = await hashPassword(password);
 
     const newEmployee = await prisma.user.create({
       data: {
         name: name.trim(),
         email: cleanEmail,
-        mobile: cleanMobile,
         password: hashedEmployeePw,
         role: "EMPLOYEE",
-        shopkeeperId: user.id,
       },
       select: {
         id: true,
         name: true,
         email: true,
-        mobile: true,
         role: true,
         createdAt: true,
       },
@@ -262,7 +241,7 @@ export async function DELETE(request: Request) {
       );
     }
 
-    const isOwnerPwValid = await bcrypt.compare(
+    const isOwnerPwValid = await verifyPassword(
       shopkeeperPassword,
       ownerRecord.password
     );
@@ -278,21 +257,21 @@ export async function DELETE(request: Request) {
     }
 
     const targetEmployee = await prisma.user.findUnique({
-      where: { id: Number(employeeId) },
+      where: { id: String(employeeId) },
     });
 
-    if (!targetEmployee || targetEmployee.shopkeeperId !== user.id) {
+    if (!targetEmployee || targetEmployee.role !== "EMPLOYEE") {
       return NextResponse.json(
         {
           success: false,
-          message: "Employee not found or does not belong to your shop.",
+          message: "Employee not found.",
         },
         { status: 404 }
       );
     }
 
     await prisma.user.delete({
-      where: { id: Number(employeeId) },
+      where: { id: String(employeeId) },
     });
 
     return NextResponse.json({

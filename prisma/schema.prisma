@@ -1,10 +1,10 @@
-generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
-}
-
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
 }
 
 enum Role {
@@ -12,66 +12,83 @@ enum Role {
   EMPLOYEE
 }
 
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum ActionType {
+  CREATE
+  EDIT
+  DELETE
+}
+
 model User {
-  id               Int        @id @default(autoincrement())
-  name             String?
-  email            String     @unique
-  mobile           String     @unique
-  password         String
-  role             Role       @default(SHOPKEEPER)
-  shopkeeperId     Int?
-  shopkeeper       User?      @relation("ShopkeeperEmployees", fields: [shopkeeperId], references: [id], onDelete: Cascade)
-  employees        User[]     @relation("ShopkeeperEmployees")
-  customers        Customer[] @relation("ShopCustomers")
-  createdCustomers Customer[] @relation("CustomerCreatedBy")
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @default(now()) @updatedAt
+  id        String     @id @default(uuid())
+  email     String     @unique
+  name      String
+  password  String
+  role      Role       @default(SHOPKEEPER)
+  customers Customer[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 }
 
 model Customer {
-  id           Int           @id @default(autoincrement())
-  name         String
-  phone        String
-  email        String?
-  address      String?
-  userId       Int
-  user         User          @relation("ShopCustomers", fields: [userId], references: [id], onDelete: Cascade)
-  createdById  Int?
-  createdBy    User?         @relation("CustomerCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  transactions Transaction[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @default(now()) @updatedAt
+  id        String     @id @default(uuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  phone     String?
+  ledger    Ledger?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   @@index([userId])
 }
 
-enum TransactionType {
-  GIVE
-  GOT
+model Ledger {
+  id           String        @id @default(uuid())
+  customerId   String        @unique
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  totalBalance Decimal       @default(0.00) @db.Decimal(12, 2)
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 }
 
 model Transaction {
-  id          Int             @id @default(autoincrement())
-  amount      Float
-  type        TransactionType
-  description String?
-  date        DateTime        @default(now())
-  customerId  Int
-  customer    Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  auditLogs   AuditLog[]
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @default(now()) @updatedAt
+  id        String          @id @default(uuid())
+  ledgerId  String
+  ledger    Ledger          @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  type      TransactionType
+  amount    Decimal         @db.Decimal(12, 2)
+  note      String?
+  method    String          @default("Cash")
+  version   Int             @default(1)
+  isDeleted Boolean         @default(false)
 
-  @@index([customerId])
+  // Person 3: Concurrent Editing Protection
+  lockedBy  String?
+  lockedAt  DateTime?
+
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  auditLogs AuditLog[]
+
+  @@index([ledgerId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
 }
 
 model AuditLog {
-  id            Int          @id @default(autoincrement())
-  action        String
-  details       String?
-  transactionId Int?
-  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-  createdAt     DateTime     @default(now())
+  id            String      @id @default(uuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  action        ActionType
+  oldData       Json?
+  newData       Json?
+  actorId       String
+  timestamp     DateTime    @default(now())
 
-  @@index([transactionId])
+  @@index([transactionId, timestamp(sort: Desc)])
 }
