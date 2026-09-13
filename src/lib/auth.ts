@@ -156,6 +156,28 @@ export function getAuthenticatedUser(req: NextRequest | Request): AuthenticatedU
     return null;
   }
 
+  // Check dl_session cookie if headers are not explicitly passed
+  const cookieHeader = headers.get("cookie");
+  if (cookieHeader) {
+    const match = cookieHeader.match(/dl_session=([^;]+)/);
+    if (match && match[1]) {
+      try {
+        const parts = match[1].split(".");
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8"));
+          if (payload && typeof payload.userId === "string" && payload.userId) {
+            return {
+              id: payload.userId,
+              shopkeeperId: payload.userId,
+            };
+          }
+        }
+      } catch {
+        // ignore malformed cookie and fall through to fallback
+      }
+    }
+  }
+
   // Default fallback for development/local environment when headers are not provided
   return {
     id: "default-shopkeeper-id",
