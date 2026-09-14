@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { BookOpenText, Loader2 } from "lucide-react";
+import { PasswordInput } from "@/components/auth/PasswordInput";
 import { login } from "@/app/actions/auth";
 
 export function LoginForm() {
@@ -12,6 +13,9 @@ export function LoginForm() {
   const from =
     rawFrom &&
     rawFrom !== "/" &&
+    rawFrom !== "home" &&
+    rawFrom !== "unauthorized" &&
+    rawFrom !== "expired" &&
     !rawFrom.startsWith("/login") &&
     !rawFrom.startsWith("/signup")
       ? rawFrom
@@ -88,18 +92,24 @@ export function LoginForm() {
             </div>
 
             <div>
-              <label htmlFor="login-password" className="block text-xs font-semibold text-slate-700">
-                Password
-              </label>
-              <input
+              <div className="flex items-center justify-between">
+                <label htmlFor="login-password" className="block text-xs font-semibold text-slate-700">
+                  Password
+                </label>
+                <Link
+                  href="/forgot-password"
+                  className="text-xs font-semibold text-slate-600 hover:text-slate-900 transition-colors"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+              <PasswordInput
                 id="login-password"
-                type="password"
                 required
                 autoComplete="current-password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full mt-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
               />
             </div>
 
