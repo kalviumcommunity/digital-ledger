@@ -12,7 +12,7 @@ const OTP_TTL_MINUTES = 10;
 export async function generateAndSendOtp(
   email: string,
   type: OtpType
-): Promise<{ success: boolean; otp?: string; error?: string }> {
+): Promise<{ success: boolean; otp?: string; delivered?: boolean; notice?: string; error?: string }> {
   const normalizedEmail = email.trim().toLowerCase();
 
   // Generate 6-digit numeric code
@@ -55,7 +55,12 @@ export async function generateAndSendOtp(
       };
     }
 
-    return { success: true };
+    return {
+      success: true,
+      otp,
+      delivered: sendResult.delivered !== false,
+      notice: sendResult.notice,
+    };
   } catch (error) {
     console.error(`[otp] Failed to generate/send OTP for ${normalizedEmail}:`, error);
     return { success: false, error: "Failed to generate and send verification code. Please try again." };

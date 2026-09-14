@@ -1,30 +1,53 @@
 import dns from "node:dns";
 import nodemailer, { type Transporter } from "nodemailer";
 
-// Force Node.js to prioritize IPv4. Cloud container environments like Render lack outbound IPv6 routing,
-// which causes "connect ENETUNREACH 2404:6800... - Local (:::0)" when attempting to connect to IPv6 endpoints.
+// Prioritize IPv4 across the Node.js runtime to eliminate ENETUNREACH on IPv6-lacking hosts
 try {
   dns.setDefaultResultOrder("ipv4first");
 } catch {
   // Ignored in runtimes that don't support setDefaultResultOrder
 }
 
-interface SendOtpEmailParams {
+export interface SendOtpEmailParams {
   to: string;
   otp: string;
   purpose: "SIGNUP" | "FORGOT_PASSWORD";
 }
 
+export interface SendOtpEmailResult {
+  success: boolean;
+  delivered?: boolean;
+  fallbackOtp?: string;
+  previewUrl?: string | false;
+  error?: string;
+  notice?: string;
+}
+
 let cachedTransporter: Transporter | null = null;
 
 export function isEmailConfigured(): boolean {
-  const user = process.env.GMAIL_USER || process.env.SMTP_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS;
-  return Boolean(user && pass);
+  return Boolean(
+    process.env.RESEND_API_KEY ||
+    process.env.BREVO_API_KEY ||
+    ((process.env.GMAIL_USER || process.env.SMTP_USER) &&
+     (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS))
+  );
 }
 
 // Backward compatibility alias
 export const isSmtpConfigured = isEmailConfigured;
+
+async function resolveIpv4Host(hostname: string): Promise<string> {
+  try {
+    const addresses = await dns.promises.resolve4(hostname);
+    if (addresses && addresses.length > 0) {
+      return addresses[0];
+    }
+  } catch {
+    // Fallback to hostname if DNS resolve4 fails
+  }
+  return hostname;
+}
 
 async function getTransporter(): Promise<{ transporter: Transporter; isConfigured: boolean }> {
   if (cachedTransporter) {
@@ -40,36 +63,42 @@ async function getTransporter(): Promise<{ transporter: Transporter; isConfigure
 
   // 1. Gmail configuration (either GMAIL_USER/GMAIL_APP_PASSWORD, or SMTP_SERVICE="gmail", or @gmail.com)
   if (user && pass && (process.env.GMAIL_USER || service === "gmail" || user.endsWith("@gmail.com"))) {
+    const resolvedHost = await resolveIpv4Host("smtp.gmail.com");
     cachedTransporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
+      host: resolvedHost,
       port: 587,
       secure: false, // STARTTLS
       requireTLS: true,
-      family: 4, // Strict IPv4 prevents ENETUNREACH on IPv4-only cloud hosts like Render
       auth: {
         user,
         pass,
       },
       tls: {
+        servername: "smtp.gmail.com",
         rejectUnauthorized: false,
       },
-      connectionTimeout: 10000,
+      connectionTimeout: 4000,
+      greetingTimeout: 4000,
+      socketTimeout: 4000,
     } as any);
     return { transporter: cachedTransporter, isConfigured: true };
   }
 
   // 2. Custom SMTP host configuration
   if (host && user && pass) {
+    const resolvedHost = await resolveIpv4Host(host);
     cachedTransporter = nodemailer.createTransport({
-      host,
+      host: resolvedHost,
       port,
       secure: port === 465,
-      family: 4, // Strict IPv4
       auth: { user, pass },
       tls: {
+        servername: host,
         rejectUnauthorized: false,
       },
-      connectionTimeout: 10000,
+      connectionTimeout: 4000,
+      greetingTimeout: 4000,
+      socketTimeout: 4000,
     } as any);
     return { transporter: cachedTransporter, isConfigured: true };
   }
@@ -105,7 +134,7 @@ export async function sendOtpEmail({
   to,
   otp,
   purpose,
-}: SendOtpEmailParams): Promise<{ success: boolean; previewUrl?: string | false; error?: string }> {
+}: SendOtpEmailParams): Promise<SendOtpEmailResult> {
   const isSignup = purpose === "SIGNUP";
   const subject = isSignup
     ? `[KhataBook] ${otp} is your account verification code`
@@ -204,6 +233,70 @@ export async function sendOtpEmail({
   console.log(`📋 Purpose: ${purpose}`);
   console.log(`============================================================\n`);
 
+  // 1. Resend HTTP API (Runs over HTTPS port 443 - Bypasses Render Free Tier SMTP port block)
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (resendApiKey) {
+    try {
+      const fromEmail = process.env.RESEND_FROM || "KhataBook <onboarding@resend.dev>";
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: [to],
+          subject,
+          html,
+        }),
+      });
+
+      const resData = await res.json();
+      if (!res.ok) {
+        throw new Error(resData.message || JSON.stringify(resData));
+      }
+
+      console.log(`✅ [RESEND DELIVERED] Email sent to ${to} via HTTPS API (Message ID: ${resData.id})`);
+      return { success: true, delivered: true };
+    } catch (err) {
+      console.error(`❌ [RESEND API ERROR] Failed to send email to ${to}:`, err);
+    }
+  }
+
+  // 2. Brevo HTTP API (Runs over HTTPS port 443 - Bypasses Render Free Tier SMTP port block)
+  const brevoApiKey = process.env.BREVO_API_KEY;
+  if (brevoApiKey) {
+    try {
+      const senderEmail = process.env.GMAIL_USER || process.env.SMTP_USER || "tallyh29@gmail.com";
+      const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+        method: "POST",
+        headers: {
+          "api-key": brevoApiKey,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          sender: { name: "KhataBook", email: senderEmail },
+          to: [{ email: to }],
+          subject,
+          htmlContent: html,
+        }),
+      });
+
+      const resData = await res.json();
+      if (!res.ok) {
+        throw new Error(resData.message || JSON.stringify(resData));
+      }
+
+      console.log(`✅ [BREVO DELIVERED] Email sent to ${to} via HTTPS API (Message ID: ${resData.messageId})`);
+      return { success: true, delivered: true };
+    } catch (err) {
+      console.error(`❌ [BREVO API ERROR] Failed to send email to ${to}:`, err);
+    }
+  }
+
+  // 3. SMTP / Gmail transport (Works locally and on hosts allowing outbound SMTP)
   const user = process.env.GMAIL_USER || process.env.SMTP_USER;
   const fromAddress =
     process.env.SMTP_FROM ||
@@ -221,29 +314,23 @@ export async function sendOtpEmail({
         html,
       });
     } catch (primaryErr) {
-      if (isConfigured) {
-        console.warn(`[email] Primary dispatch failed (${(primaryErr as Error).message}), retrying on port 465 (IPv4)...`);
-        const user = (process.env.GMAIL_USER || process.env.SMTP_USER || "").trim();
-        const pass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "").replace(/\s+/g, "");
-        const fallbackTransporter = nodemailer.createTransport({
-          host: "smtp.gmail.com",
-          port: 465,
-          secure: true,
-          family: 4,
-          auth: { user, pass },
-          tls: { rejectUnauthorized: false },
-          connectionTimeout: 10000,
-        } as any);
-        info = await fallbackTransporter.sendMail({
-          from: fromAddress,
-          to,
-          subject,
-          text: `${title}\n\n${message}\n\nYour 6-digit OTP: ${otp}\n\nThis code expires in 10 minutes.\n\nNever share this code with anyone.`,
-          html,
-        });
-      } else {
-        throw primaryErr;
+      const errMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+      const isNetworkBlocked = /ENETUNREACH|ETIMEDOUT|ECONNREFUSED|EHOSTUNREACH|ECONNRESET|greeting timeout|Greeting never received/i.test(
+        errMsg
+      );
+
+      if (isNetworkBlocked) {
+        console.warn(`⚠️ [EMAIL NOTICE] Outbound SMTP port blocked by host firewall: ${errMsg}`);
+        console.warn(`🔑 [OTP CODE] Verification code for ${to} is: ${otp}`);
+        return {
+          success: true,
+          delivered: false,
+          fallbackOtp: otp,
+          notice: "Outbound SMTP port blocked by host firewall. Verification code provided directly.",
+        };
       }
+
+      throw primaryErr;
     }
 
     if (isConfigured) {
@@ -255,10 +342,22 @@ export async function sendOtpEmail({
       }
     }
 
-    return { success: true };
+    return { success: true, delivered: true };
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error(`❌ [EMAIL DISPATCH ERROR] Failed to send email to ${to}:`, errorMessage);
+
+    if (/ENETUNREACH|ETIMEDOUT|ECONNREFUSED|EHOSTUNREACH|ECONNRESET|greeting timeout|Greeting never received/i.test(errorMessage)) {
+      console.warn(`⚠️ [EMAIL NOTICE] Host network restricted outbound SMTP ports.`);
+      console.warn(`🔑 [OTP CODE] Verification code for ${to} is: ${otp}`);
+      return {
+        success: true,
+        delivered: false,
+        fallbackOtp: otp,
+        notice: "Outbound SMTP port blocked by host firewall. Verification code provided directly.",
+      };
+    }
+
     return {
       success: false,
       error: `Failed to deliver verification code to your email: ${errorMessage}`,

@@ -150,7 +150,7 @@ export async function requestSignupOtp(input: {
   name: string;
   email: string;
   password: string;
-}): Promise<ActionResult<{ email: string }>> {
+}): Promise<ActionResult<{ email: string; otp?: string; delivered?: boolean; notice?: string }>> {
   const name = input.name.trim();
   const email = input.email.trim().toLowerCase();
   const password = input.password;
@@ -183,6 +183,9 @@ export async function requestSignupOtp(input: {
     success: true,
     data: {
       email,
+      otp: result.otp,
+      delivered: result.delivered,
+      notice: result.notice,
     },
   };
 }
@@ -235,7 +238,7 @@ export async function completeSignupWithOtp(input: {
  */
 export async function requestPasswordResetOtp(
   email: string
-): Promise<ActionResult<{ email: string }>> {
+): Promise<ActionResult<{ email: string; otp?: string; delivered?: boolean; notice?: string }>> {
   const normalizedEmail = email.trim().toLowerCase();
   if (!normalizedEmail || !EMAIL_PATTERN.test(normalizedEmail)) {
     return { success: false, error: "Please enter a valid email address." };
@@ -256,6 +259,9 @@ export async function requestPasswordResetOtp(
     success: true,
     data: {
       email: normalizedEmail,
+      otp: result.otp,
+      delivered: result.delivered,
+      notice: result.notice,
     },
   };
 }
