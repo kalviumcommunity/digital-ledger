@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: khata-digital-ledger
+    name: digital-ledger-tu7k
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile

@@ -1,6 +1,8 @@
 # Digital Ledger & Customer Audit System (KhataBook)
 
-A digital ledger platform designed for businesses to manage customer financial accounts, track credit transactions, maintain immutable audit histories, and handle concurrent edits[cite: 1].
+A digital ledger platform designed for businesses to manage customer financial accounts, track credit transactions, maintain immutable audit histories, and handle concurrent edits.
+
+🌐 **Live Production Deployment:** [https://digital-ledger-tu7k.onrender.com](https://digital-ledger-tu7k.onrender.com)
 
 ---
 
@@ -103,3 +105,14 @@ docker compose down
 | :--- | :--- | :--- |
 | **Shopkeeper (Admin)** | `demo@khata.com` | `password123` |
 | **Employee (Staff)** | `staff@khata.com` | `staff@1234` |
+
+---
+
+## Cloud Deployment (Render)
+
+The application is deployed on Render as a multi-stage Docker container:
+
+* **Live App URL:** [https://digital-ledger-tu7k.onrender.com](https://digital-ledger-tu7k.onrender.com)
+* **Automated CI/CD:** Connected directly to the GitHub repository with auto-deployments on every merge to `main`.
+* **Database:** Hosted on PostgreSQL with automatic schema synchronization on startup.
+* **Email Verification:** Integrated with Gmail SMTP (`tallyh29@gmail.com`) for real-time 6-digit OTP delivery for Sign Up and Password Reset.
