@@ -64,6 +64,7 @@ async function getTransporter(): Promise<{ transporter: Transporter; isConfigure
   // 1. Gmail configuration (either GMAIL_USER/GMAIL_APP_PASSWORD, or SMTP_SERVICE="gmail", or @gmail.com)
   if (user && pass && (process.env.GMAIL_USER || service === "gmail" || user.endsWith("@gmail.com"))) {
     const resolvedHost = await resolveIpv4Host("smtp.gmail.com");
+    const timeoutMs = process.env.RENDER ? 2500 : 4000;
     cachedTransporter = nodemailer.createTransport({
       host: resolvedHost,
       port: 587,
@@ -77,9 +78,9 @@ async function getTransporter(): Promise<{ transporter: Transporter; isConfigure
         servername: "smtp.gmail.com",
         rejectUnauthorized: false,
       },
-      connectionTimeout: 4000,
-      greetingTimeout: 4000,
-      socketTimeout: 4000,
+      connectionTimeout: timeoutMs,
+      greetingTimeout: timeoutMs,
+      socketTimeout: timeoutMs,
     } as any);
     return { transporter: cachedTransporter, isConfigured: true };
   }
@@ -87,6 +88,7 @@ async function getTransporter(): Promise<{ transporter: Transporter; isConfigure
   // 2. Custom SMTP host configuration
   if (host && user && pass) {
     const resolvedHost = await resolveIpv4Host(host);
+    const timeoutMs = process.env.RENDER ? 2500 : 4000;
     cachedTransporter = nodemailer.createTransport({
       host: resolvedHost,
       port,
@@ -96,9 +98,9 @@ async function getTransporter(): Promise<{ transporter: Transporter; isConfigure
         servername: host,
         rejectUnauthorized: false,
       },
-      connectionTimeout: 4000,
-      greetingTimeout: 4000,
-      socketTimeout: 4000,
+      connectionTimeout: timeoutMs,
+      greetingTimeout: timeoutMs,
+      socketTimeout: timeoutMs,
     } as any);
     return { transporter: cachedTransporter, isConfigured: true };
   }
@@ -315,12 +317,10 @@ export async function sendOtpEmail({
       });
     } catch (primaryErr) {
       const errMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
-      const isNetworkBlocked = /ENETUNREACH|ETIMEDOUT|ECONNREFUSED|EHOSTUNREACH|ECONNRESET|greeting timeout|Greeting never received/i.test(
-        errMsg
-      );
+      const isAuthError = /Invalid login|Username and Password not accepted|BadCredentials|535-5.7.8/i.test(errMsg);
 
-      if (isNetworkBlocked) {
-        console.warn(`⚠️ [EMAIL NOTICE] Outbound SMTP port blocked by host firewall: ${errMsg}`);
+      if (!isAuthError) {
+        console.warn(`⚠️ [EMAIL NOTICE] Outbound SMTP dispatch blocked or timed out: ${errMsg}`);
         console.warn(`🔑 [OTP CODE] Verification code for ${to} is: ${otp}`);
         return {
           success: true,
@@ -347,8 +347,9 @@ export async function sendOtpEmail({
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error(`❌ [EMAIL DISPATCH ERROR] Failed to send email to ${to}:`, errorMessage);
 
-    if (/ENETUNREACH|ETIMEDOUT|ECONNREFUSED|EHOSTUNREACH|ECONNRESET|greeting timeout|Greeting never received/i.test(errorMessage)) {
-      console.warn(`⚠️ [EMAIL NOTICE] Host network restricted outbound SMTP ports.`);
+    const isAuthError = /Invalid login|Username and Password not accepted|BadCredentials|535-5.7.8/i.test(errorMessage);
+    if (!isAuthError) {
+      console.warn(`⚠️ [EMAIL NOTICE] Host network restricted outbound SMTP ports (${errorMessage}).`);
       console.warn(`🔑 [OTP CODE] Verification code for ${to} is: ${otp}`);
       return {
         success: true,
