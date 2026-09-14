@@ -1,4 +1,13 @@
+import dns from "node:dns";
 import nodemailer, { type Transporter } from "nodemailer";
+
+// Force Node.js to prioritize IPv4. Cloud container environments like Render lack outbound IPv6 routing,
+// which causes "connect ENETUNREACH 2404:6800... - Local (:::0)" when attempting to connect to IPv6 endpoints.
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {
+  // Ignored in runtimes that don't support setDefaultResultOrder
+}
 
 interface SendOtpEmailParams {
   to: string;
@@ -27,17 +36,25 @@ async function getTransporter(): Promise<{ transporter: Transporter; isConfigure
   const pass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "").replace(/\s+/g, "");
   const service = process.env.SMTP_SERVICE;
   const host = process.env.SMTP_HOST;
-  const port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 465;
+  const port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587;
 
   // 1. Gmail configuration (either GMAIL_USER/GMAIL_APP_PASSWORD, or SMTP_SERVICE="gmail", or @gmail.com)
   if (user && pass && (process.env.GMAIL_USER || service === "gmail" || user.endsWith("@gmail.com"))) {
     cachedTransporter = nodemailer.createTransport({
-      service: "gmail",
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false, // STARTTLS
+      requireTLS: true,
+      family: 4, // Strict IPv4 prevents ENETUNREACH on IPv4-only cloud hosts like Render
       auth: {
         user,
         pass,
       },
-    });
+      tls: {
+        rejectUnauthorized: false,
+      },
+      connectionTimeout: 10000,
+    } as any);
     return { transporter: cachedTransporter, isConfigured: true };
   }
 
@@ -47,11 +64,13 @@ async function getTransporter(): Promise<{ transporter: Transporter; isConfigure
       host,
       port,
       secure: port === 465,
+      family: 4, // Strict IPv4
       auth: { user, pass },
       tls: {
         rejectUnauthorized: false,
       },
-    });
+      connectionTimeout: 10000,
+    } as any);
     return { transporter: cachedTransporter, isConfigured: true };
   }
 
@@ -192,13 +211,40 @@ export async function sendOtpEmail({
 
   try {
     const { transporter, isConfigured } = await getTransporter();
-    const info = await transporter.sendMail({
-      from: fromAddress,
-      to,
-      subject,
-      text: `${title}\n\n${message}\n\nYour 6-digit OTP: ${otp}\n\nThis code expires in 10 minutes.\n\nNever share this code with anyone.`,
-      html,
-    });
+    let info;
+    try {
+      info = await transporter.sendMail({
+        from: fromAddress,
+        to,
+        subject,
+        text: `${title}\n\n${message}\n\nYour 6-digit OTP: ${otp}\n\nThis code expires in 10 minutes.\n\nNever share this code with anyone.`,
+        html,
+      });
+    } catch (primaryErr) {
+      if (isConfigured) {
+        console.warn(`[email] Primary dispatch failed (${(primaryErr as Error).message}), retrying on port 465 (IPv4)...`);
+        const user = (process.env.GMAIL_USER || process.env.SMTP_USER || "").trim();
+        const pass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "").replace(/\s+/g, "");
+        const fallbackTransporter = nodemailer.createTransport({
+          host: "smtp.gmail.com",
+          port: 465,
+          secure: true,
+          family: 4,
+          auth: { user, pass },
+          tls: { rejectUnauthorized: false },
+          connectionTimeout: 10000,
+        } as any);
+        info = await fallbackTransporter.sendMail({
+          from: fromAddress,
+          to,
+          subject,
+          text: `${title}\n\n${message}\n\nYour 6-digit OTP: ${otp}\n\nThis code expires in 10 minutes.\n\nNever share this code with anyone.`,
+          html,
+        });
+      } else {
+        throw primaryErr;
+      }
+    }
 
     if (isConfigured) {
       console.log(`✅ [GMAIL/SMTP DELIVERED] Email successfully sent to ${to} (Message ID: ${info.messageId})`);
