@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: khata-digital-ledger
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: NEXTAUTH_URL
+        sync: false
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: GMAIL_USER
+        value: tallyh29@gmail.com
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      - key: AUTO_SEED
+        value: "false"
