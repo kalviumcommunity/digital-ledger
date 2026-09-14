@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { decryptSession, SESSION_COOKIE_NAME } from "@/lib/session-token";
 
-const PUBLIC_PATHS = ["/login", "/signup"];
+const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -9,7 +9,15 @@ export async function proxy(request: NextRequest) {
   const session = await decryptSession(request.cookies.get(SESSION_COOKIE_NAME)?.value);
   const isAuthenticated = session?.userId != null;
 
-  // Authenticated users hitting the auth pages are sent to the feed.
+  // If user arrives at a public path with a "from" parameter, they were rejected by a protected route:
+  // clear the stale session cookie and render the public page directly.
+  if (isPublicPath && request.nextUrl.searchParams.has("from")) {
+    const response = NextResponse.next();
+    response.cookies.delete(SESSION_COOKIE_NAME);
+    return response;
+  }
+
+  // Authenticated users hitting auth pages without a "from" bounce are sent to the feed.
   if (isPublicPath && isAuthenticated) {
     return NextResponse.redirect(new URL("/transactions", request.url));
   }

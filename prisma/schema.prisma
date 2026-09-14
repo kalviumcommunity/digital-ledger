@@ -4,7 +4,8 @@ datasource db {
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 enum Role {
@@ -91,4 +92,20 @@ model AuditLog {
   timestamp     DateTime    @default(now())
 
   @@index([transactionId, timestamp(sort: Desc)])
+}
+
+enum OtpType {
+  SIGNUP
+  FORGOT_PASSWORD
+}
+
+model OtpVerification {
+  id        String   @id @default(uuid())
+  email     String
+  otp       String
+  type      OtpType
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email, type])
 }

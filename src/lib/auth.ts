@@ -60,17 +60,25 @@ export async function createSession(user: {
   role: Role;
 }): Promise<void> {
   const token = await encryptSession({ userId: user.id, role: user.role });
-  (await cookies()).set(SESSION_COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: SESSION_MAX_AGE_SECONDS,
-    path: "/",
-  });
+  try {
+    (await cookies()).set(SESSION_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: process.env.NEXTAUTH_URL?.startsWith("https://") ?? false,
+      sameSite: "lax",
+      maxAge: SESSION_MAX_AGE_SECONDS,
+      path: "/",
+    });
+  } catch {
+    // Safe fallback if called outside a Next.js request scope (e.g. unit/integration test)
+  }
 }
 
 export async function destroySession(): Promise<void> {
-  (await cookies()).delete(SESSION_COOKIE_NAME);
+  try {
+    (await cookies()).delete(SESSION_COOKIE_NAME);
+  } catch {
+    // Safe fallback if called outside a Next.js request scope
+  }
 }
 
 export const getSession = cache(async () => {
@@ -98,7 +106,14 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
       where: { id: session.userId },
       select: { id: true, name: true, email: true, role: true },
     });
-    if (!user) return null;
+    if (!user) {
+      try {
+        (await cookies()).delete(SESSION_COOKIE_NAME);
+      } catch {
+        // Read-only cookie context in some Next.js execution phases
+      }
+      return null;
+    }
     return user;
   } catch {
     return null;
@@ -107,7 +122,9 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
 
 export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) {
+    redirect("/login?from=unauthorized");
+  }
   return user;
 }
 

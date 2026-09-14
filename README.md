@@ -41,14 +41,65 @@ The system is organized into three distinct feature modules:
 
 ## Getting Started
 
-### Prerequisites
+### Quick Start with Docker (Single Command) 🚀
 
-* Node.js (v18.17+ or v20+)
-* npm / yarn / pnpm
+Run the entire application along with PostgreSQL in containers with a single command:
 
-### Installation
+```bash
+docker compose up --build
+```
 
+- **Application URL:** [http://localhost:3000](http://localhost:3000)
+- **Database:** PostgreSQL automatically starts on port `5432` with persistent storage.
+- **Auto-setup:** Prisma schema is automatically synced and demo data is seeded on initial boot.
+
+To stop the containers:
+```bash
+docker compose down
+```
+
+---
+
+### Manual / Local Setup
+
+#### Prerequisites
+* Node.js (v20+ recommended)
+* PostgreSQL database instance
+
+#### Installation Steps
 1. Clone the repository:
    ```bash
-   git clone [https://github.com/kalviumcommunity/digital-ledger.git](https://github.com/kalviumcommunity/digital-ledger.git)
+   git clone https://github.com/kalviumcommunity/digital-ledger.git
    cd digital-ledger
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Set up environment variables:
+   ```bash
+   cp .env.example .env
+   # Update DATABASE_URL with your PostgreSQL connection string
+   ```
+
+4. Push database schema and seed demo records:
+   ```bash
+   npx prisma db push
+   npx prisma db seed
+   ```
+
+5. Run development server:
+   ```bash
+   npm run dev
+   ```
+
+---
+
+## Demo Credentials
+
+| Role | Email | Password |
+| :--- | :--- | :--- |
+| **Shopkeeper (Admin)** | `demo@khata.com` | `password123` |
+| **Employee (Staff)** | `staff@khata.com` | `staff@1234` |

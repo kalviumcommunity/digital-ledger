@@ -9,6 +9,7 @@ const localIps = Object.values(os.networkInterfaces())
   .map((net) => net.address);
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   outputFileTracingRoot: path.resolve(__dirname),
   allowedDevOrigins: [
     ...localIps,
