@@ -31,24 +31,20 @@ export function ForgotPasswordForm() {
     setError(null);
     setInfo(null);
     setPending(true);
-
-    const result = await requestPasswordResetOtp(email);
-    setPending(false);
-
-    if (result.success) {
-      setStep("RESET");
-      setResendCooldown(30);
-      if (result.data.delivered === false && result.data.otp) {
-        setOtp(result.data.otp);
-        setInfo(
-          `Reset Code: ${result.data.otp} (Outbound SMTP blocked by host firewall; code auto-filled for instant verification)`
-        );
-      } else {
+    try {
+      const result = await requestPasswordResetOtp(email);
+      if (result.success) {
+        setStep("RESET");
         setOtp("");
+        setResendCooldown(30);
         setInfo(`We've sent a 6-digit reset code to ${email.trim().toLowerCase()}. Please check your email inbox.`);
+      } else {
+        setError(result.error);
       }
-    } else {
-      setError(result.error);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to send reset code.");
+    } finally {
+      setPending(false);
     }
   };
 
@@ -58,21 +54,18 @@ export function ForgotPasswordForm() {
     setInfo(null);
     setPending(true);
 
-    const result = await requestPasswordResetOtp(email);
-    setPending(false);
-
-    if (result.success) {
-      setResendCooldown(30);
-      if (result.data.delivered === false && result.data.otp) {
-        setOtp(result.data.otp);
-        setInfo(
-          `Fresh Reset Code: ${result.data.otp} (Outbound SMTP blocked by host firewall; code auto-filled for instant verification)`
-        );
-      } else {
+    try {
+      const result = await requestPasswordResetOtp(email);
+      if (result.success) {
+        setResendCooldown(30);
         setInfo(`A fresh reset code was sent to ${email.trim().toLowerCase()}. Please check your email inbox.`);
+      } else {
+        setError(result.error);
       }
-    } else {
-      setError(result.error);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to resend code.");
+    } finally {
+      setPending(false);
     }
   };
 
@@ -91,17 +84,22 @@ export function ForgotPasswordForm() {
     }
 
     setPending(true);
-    const result = await resetPasswordWithOtp({
-      email,
-      otp,
-      newPassword,
-    });
-    setPending(false);
+    try {
+      const result = await resetPasswordWithOtp({
+        email,
+        otp,
+        newPassword,
+      });
 
-    if (result.success) {
-      window.location.href = "/transactions";
-    } else {
-      setError(result.error);
+      if (result.success) {
+        window.location.href = "/transactions";
+      } else {
+        setError(result.error);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to reset password.");
+    } finally {
+      setPending(false);
     }
   };
 

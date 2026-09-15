@@ -46,24 +46,20 @@ export function SignupForm() {
     }
 
     setPending(true);
-
-    const result = await requestSignupOtp({ name, email, password });
-    setPending(false);
-
-    if (result.success) {
-      setStep("OTP");
-      setResendCooldown(30);
-      if (result.data.delivered === false && result.data.otp) {
-        setOtp(result.data.otp);
-        setInfo(
-          `Verification Code: ${result.data.otp} (Outbound SMTP blocked by host firewall; code auto-filled for instant verification)`
-        );
-      } else {
+    try {
+      const result = await requestSignupOtp({ name, email, password });
+      if (result.success) {
+        setStep("OTP");
         setOtp("");
+        setResendCooldown(30);
         setInfo(`We've sent a 6-digit verification code to ${email.trim().toLowerCase()}. Please check your email inbox.`);
+      } else {
+        setError(result.error);
       }
-    } else {
-      setError(result.error);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to send verification code.");
+    } finally {
+      setPending(false);
     }
   };
 
@@ -73,21 +69,18 @@ export function SignupForm() {
     setInfo(null);
     setPending(true);
 
-    const result = await requestSignupOtp({ name, email, password });
-    setPending(false);
-
-    if (result.success) {
-      setResendCooldown(30);
-      if (result.data.delivered === false && result.data.otp) {
-        setOtp(result.data.otp);
-        setInfo(
-          `Fresh Verification Code: ${result.data.otp} (Outbound SMTP blocked by host firewall; code auto-filled for instant verification)`
-        );
-      } else {
+    try {
+      const result = await requestSignupOtp({ name, email, password });
+      if (result.success) {
+        setResendCooldown(30);
         setInfo(`A fresh verification code was sent to ${email.trim().toLowerCase()}. Please check your email inbox.`);
+      } else {
+        setError(result.error);
       }
-    } else {
-      setError(result.error);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to resend code.");
+    } finally {
+      setPending(false);
     }
   };
 
@@ -96,19 +89,24 @@ export function SignupForm() {
     setError(null);
     setPending(true);
 
-    const result = await completeSignupWithOtp({
-      name,
-      email,
-      password,
-      role,
-      otp,
-    });
-    setPending(false);
+    try {
+      const result = await completeSignupWithOtp({
+        name,
+        email,
+        password,
+        role,
+        otp,
+      });
 
-    if (result.success) {
-      window.location.href = "/transactions";
-    } else {
-      setError(result.error);
+      if (result.success) {
+        window.location.href = "/transactions";
+      } else {
+        setError(result.error);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to complete signup.");
+    } finally {
+      setPending(false);
     }
   };
 
