@@ -50,16 +50,9 @@ export function SignupForm() {
       const result = await requestSignupOtp({ name, email, password });
       if (result.success) {
         setStep("OTP");
+        setOtp("");
         setResendCooldown(30);
-        if (result.data.delivered === false && result.data.otp) {
-          setOtp(result.data.otp);
-          setInfo(
-            `Verification Code: ${result.data.otp} (Outbound SMTP blocked by host firewall; code auto-filled for instant verification)`
-          );
-        } else {
-          setOtp("");
-          setInfo(`We've sent a 6-digit verification code to ${email.trim().toLowerCase()}. Please check your email inbox.`);
-        }
+        setInfo(`We've sent a 6-digit verification code to ${email.trim().toLowerCase()}. Please check your email inbox.`);
       } else {
         setError(result.error);
       }
@@ -80,14 +73,7 @@ export function SignupForm() {
       const result = await requestSignupOtp({ name, email, password });
       if (result.success) {
         setResendCooldown(30);
-        if (result.data.delivered === false && result.data.otp) {
-          setOtp(result.data.otp);
-          setInfo(
-            `Fresh Verification Code: ${result.data.otp} (Outbound SMTP blocked by host firewall; code auto-filled for instant verification)`
-          );
-        } else {
-          setInfo(`A fresh verification code was sent to ${email.trim().toLowerCase()}. Please check your email inbox.`);
-        }
+        setInfo(`A fresh verification code was sent to ${email.trim().toLowerCase()}. Please check your email inbox.`);
       } else {
         setError(result.error);
       }

@@ -16,11 +16,8 @@ export interface SendOtpEmailParams {
 
 export interface SendOtpEmailResult {
   success: boolean;
-  delivered?: boolean;
-  fallbackOtp?: string;
-  previewUrl?: string | false;
   error?: string;
-  notice?: string;
+  previewUrl?: string | false;
 }
 
 let cachedTransporter: Transporter | null = null;
@@ -260,9 +257,13 @@ export async function sendOtpEmail({
       }
 
       console.log(`✅ [RESEND DELIVERED] Email sent to ${to} via HTTPS API (Message ID: ${resData.id})`);
-      return { success: true, delivered: true };
+      return { success: true };
     } catch (err) {
       console.error(`❌ [RESEND API ERROR] Failed to send email to ${to}:`, err);
+      return {
+        success: false,
+        error: `Failed to deliver email via Resend API: ${(err as Error).message}`,
+      };
     }
   }
 
@@ -270,7 +271,8 @@ export async function sendOtpEmail({
   const brevoApiKey = process.env.BREVO_API_KEY;
   if (brevoApiKey) {
     try {
-      const senderEmail = process.env.GMAIL_USER || process.env.SMTP_USER || "tallyh29@gmail.com";
+      const senderEmail = process.env.BREVO_SENDER || process.env.GMAIL_USER || process.env.SMTP_USER || "tallyh29@gmail.com";
+      const senderName = process.env.BREVO_SENDER_NAME || "KhataBook";
       const res = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
         headers: {
@@ -279,7 +281,7 @@ export async function sendOtpEmail({
           Accept: "application/json",
         },
         body: JSON.stringify({
-          sender: { name: "KhataBook", email: senderEmail },
+          sender: { name: senderName, email: senderEmail },
           to: [{ email: to }],
           subject,
           htmlContent: html,
@@ -292,9 +294,13 @@ export async function sendOtpEmail({
       }
 
       console.log(`✅ [BREVO DELIVERED] Email sent to ${to} via HTTPS API (Message ID: ${resData.messageId})`);
-      return { success: true, delivered: true };
+      return { success: true };
     } catch (err) {
       console.error(`❌ [BREVO API ERROR] Failed to send email to ${to}:`, err);
+      return {
+        success: false,
+        error: `Failed to deliver email via Brevo API: ${(err as Error).message}`,
+      };
     }
   }
 
@@ -316,20 +322,6 @@ export async function sendOtpEmail({
         html,
       });
     } catch (primaryErr) {
-      const errMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
-      const isAuthError = /Invalid login|Username and Password not accepted|BadCredentials|535-5.7.8/i.test(errMsg);
-
-      if (!isAuthError) {
-        console.warn(`⚠️ [EMAIL NOTICE] Outbound SMTP dispatch blocked or timed out: ${errMsg}`);
-        console.warn(`🔑 [OTP CODE] Verification code for ${to} is: ${otp}`);
-        return {
-          success: true,
-          delivered: false,
-          fallbackOtp: otp,
-          notice: "Outbound SMTP port blocked by host firewall. Verification code provided directly.",
-        };
-      }
-
       throw primaryErr;
     }
 
@@ -342,20 +334,15 @@ export async function sendOtpEmail({
       }
     }
 
-    return { success: true, delivered: true };
+    return { success: true };
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     console.error(`❌ [EMAIL DISPATCH ERROR] Failed to send email to ${to}:`, errorMessage);
 
-    const isAuthError = /Invalid login|Username and Password not accepted|BadCredentials|535-5.7.8/i.test(errorMessage);
-    if (!isAuthError) {
-      console.warn(`⚠️ [EMAIL NOTICE] Host network restricted outbound SMTP ports (${errorMessage}).`);
-      console.warn(`🔑 [OTP CODE] Verification code for ${to} is: ${otp}`);
+    if (errorMessage.includes("timeout") || errorMessage.includes("ENETUNREACH") || errorMessage.includes("ECONNREFUSED")) {
       return {
-        success: true,
-        delivered: false,
-        fallbackOtp: otp,
-        notice: "Outbound SMTP port blocked by host firewall. Verification code provided directly.",
+        success: false,
+        error: `Failed to deliver verification email: Outbound SMTP ports (587/465) are blocked by Render Free Tier. To send real OTP emails on Render, please add a free BREVO_API_KEY (from brevo.com) or RESEND_API_KEY in your Render Environment Variables.`,
       };
     }
 
