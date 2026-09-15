@@ -23,5 +23,9 @@ else
   echo "==> [EMAIL CONFIG] BREVO_API_KEY is not directly set in container env."
 fi
 
+if [ -n "$BREVO_SENDER_EMAIL" ] || [ -n "$BREVO_SENDER" ]; then
+  echo "==> [EMAIL CONFIG] Brevo sender email is detected in container."
+fi
+
 echo "==> Launching Next.js server on port ${PORT:-3000}..."
 exec "$@"
