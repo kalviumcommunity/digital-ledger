@@ -43,14 +43,13 @@ async function runBrevoEmailTests() {
     assert(getBrevoApiKey() === "test-quoted-key", "getBrevoApiKey() strips surrounding quotes");
 
     // ----------------------------------------------------
-    // Test 3: Default sender when no env vars are set
+    // Test 3: No fallback sender when env vars are unset
     // ----------------------------------------------------
     delete process.env.BREVO_SENDER_EMAIL;
     delete process.env.BREVO_SENDER;
     delete process.env.BREVO_SENDER_NAME;
     const defaultSender = getBrevoSender();
-    assert(defaultSender.email === "tallyh29@gmail.com", "Default sender email is tallyh29@gmail.com");
-    assert(defaultSender.name === "TallyHo", "Default sender name is TallyHo");
+    assert(defaultSender === undefined, "getBrevoSender() returns undefined when no sender env vars are set (no hardcoded fallback)");
 
     // ----------------------------------------------------
     // Test 4: Sender resolution from BREVO_SENDER_EMAIL & BREVO_SENDER_NAME
@@ -58,8 +57,8 @@ async function runBrevoEmailTests() {
     process.env.BREVO_SENDER_EMAIL = "tallyh29@gmail.com";
     process.env.BREVO_SENDER_NAME = "TallyHo";
     const sender1 = getBrevoSender();
-    assert(sender1.email === "tallyh29@gmail.com", "getBrevoSender() reads BREVO_SENDER_EMAIL");
-    assert(sender1.name === "TallyHo", "getBrevoSender() reads BREVO_SENDER_NAME");
+    assert(sender1?.email === "tallyh29@gmail.com", "getBrevoSender() reads BREVO_SENDER_EMAIL");
+    assert(sender1?.name === "TallyHo", "getBrevoSender() reads BREVO_SENDER_NAME");
 
     // ----------------------------------------------------
     // Test 5: Sender resolution backwards compatibility with BREVO_SENDER = "TallyHo <tallyh29@gmail.com>"
@@ -68,15 +67,17 @@ async function runBrevoEmailTests() {
     delete process.env.BREVO_SENDER_NAME;
     process.env.BREVO_SENDER = "TallyHo <tallyh29@gmail.com>";
     const sender2 = getBrevoSender();
-    assert(sender2.email === "tallyh29@gmail.com", "getBrevoSender() parses email from 'TallyHo <tallyh29@gmail.com>'");
-    assert(sender2.name === "TallyHo", "getBrevoSender() parses name from 'TallyHo <tallyh29@gmail.com>'");
+    assert(sender2?.email === "tallyh29@gmail.com", "getBrevoSender() parses email from 'TallyHo <tallyh29@gmail.com>'");
+    assert(sender2?.name === "TallyHo", "getBrevoSender() parses name from 'TallyHo <tallyh29@gmail.com>'");
 
     // ----------------------------------------------------
     // Test 6: Sender resolution backwards compatibility with BREVO_SENDER = "tallyh29@gmail.com"
     // ----------------------------------------------------
+    delete process.env.BREVO_SENDER_EMAIL;
+    delete process.env.BREVO_SENDER_NAME;
     process.env.BREVO_SENDER = "tallyh29@gmail.com";
     const sender3 = getBrevoSender();
-    assert(sender3.email === "tallyh29@gmail.com", "getBrevoSender() parses plain email from BREVO_SENDER");
+    assert(sender3?.email === "tallyh29@gmail.com", "getBrevoSender() parses plain email from BREVO_SENDER");
 
     // ----------------------------------------------------
     // Test 7: Missing API key handling in sendOtpEmail
@@ -96,6 +97,29 @@ async function runBrevoEmailTests() {
     assert(
       (missingKeyResult.error || "").includes("BREVO_API_KEY is not configured"),
       "sendOtpEmail provides clear error message when BREVO_API_KEY is missing"
+    );
+
+    // ----------------------------------------------------
+    // Test 7b: Missing sender handling in sendOtpEmail
+    // ----------------------------------------------------
+    process.env.BREVO_API_KEY = "test-brevo-key-123";
+    delete process.env.BREVO_SENDER_EMAIL;
+    delete process.env.BREVO_SENDER;
+    delete process.env.BREVO_SENDER_NAME;
+    delete process.env.RESEND_API_KEY;
+    delete process.env.ALLOW_DEV_EMAIL_FALLBACK;
+    (process.env as any).NODE_ENV = "production";
+
+    const missingSenderResult = await sendOtpEmail({
+      to: "recipient@example.com",
+      otp: "123456",
+      purpose: "FORGOT_PASSWORD",
+    });
+
+    assert(missingSenderResult.success === false, "sendOtpEmail returns success: false when BREVO_SENDER_EMAIL is missing");
+    assert(
+      (missingSenderResult.error || "").includes("BREVO_SENDER_EMAIL is not configured"),
+      "sendOtpEmail provides clear error message when BREVO_SENDER_EMAIL is missing"
     );
 
     // ----------------------------------------------------

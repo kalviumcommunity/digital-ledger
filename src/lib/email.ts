@@ -20,6 +20,14 @@ export function getCleanEnv(name: string): string | undefined {
     const val = process.env.BREVO_API_KEY;
     if (val && typeof val === "string" && val.trim()) return val.trim().replace(/^["']|["']$/g, "");
   }
+  if (name === "BREVO_SENDER_EMAIL") {
+    const val = process.env.BREVO_SENDER_EMAIL;
+    if (val && typeof val === "string" && val.trim()) return val.trim().replace(/^["']|["']$/g, "");
+  }
+  if (name === "BREVO_SENDER_NAME") {
+    const val = process.env.BREVO_SENDER_NAME;
+    if (val && typeof val === "string" && val.trim()) return val.trim().replace(/^["']|["']$/g, "");
+  }
   if (name === "BREVO_SENDER") {
     const val = process.env.BREVO_SENDER;
     if (val && typeof val === "string" && val.trim()) return val.trim().replace(/^["']|["']$/g, "");
@@ -93,11 +101,11 @@ export function getResendApiKey(): string | undefined {
   return undefined;
 }
 
-export function getBrevoSender(): { email: string; name: string } {
+export function getBrevoSender(): { email: string; name?: string } | undefined {
   let email = process.env.BREVO_SENDER_EMAIL?.trim() || getCleanEnv("BREVO_SENDER_EMAIL");
   let name = process.env.BREVO_SENDER_NAME?.trim() || getCleanEnv("BREVO_SENDER_NAME");
 
-  // Backwards compatibility for BREVO_SENDER (handles "TallyHo <tallyh29@gmail.com>" or "tallyh29@gmail.com")
+  // Backwards compatibility for BREVO_SENDER (handles "Sender Name <sender@example.com>" or "sender@example.com")
   if (!email) {
     const rawSender = process.env.BREVO_SENDER?.trim() || getCleanEnv("BREVO_SENDER");
     if (rawSender) {
@@ -111,9 +119,13 @@ export function getBrevoSender(): { email: string; name: string } {
     }
   }
 
+  if (!email) {
+    return undefined;
+  }
+
   return {
-    email: (email || "tallyh29@gmail.com").replace(/^["']|["']$/g, ""),
-    name: (name || "TallyHo").replace(/^["']|["']$/g, ""),
+    email: email.replace(/^["']|["']$/g, ""),
+    name: name ? name.replace(/^["']|["']$/g, "") : undefined,
   };
 }
 
@@ -229,9 +241,10 @@ export async function sendOtpEmail({
 
   const resendApiKey = getResendApiKey();
   const brevoApiKey = getBrevoApiKey();
+  const brevoSender = getBrevoSender();
 
-  console.log(`[EMAIL CONFIG] Brevo API key configured: ${Boolean(process.env.BREVO_API_KEY)}`);
-  console.log(`[EMAIL CONFIG] Brevo sender configured: ${Boolean(process.env.BREVO_SENDER_EMAIL || process.env.BREVO_SENDER)}`);
+  console.log(`[EMAIL CONFIG] Brevo API key configured: ${Boolean(process.env.BREVO_API_KEY || brevoApiKey)}`);
+  console.log(`[EMAIL CONFIG] Brevo sender configured: ${Boolean(brevoSender?.email)}`);
   console.log(`[EMAIL DISPATCH] Brevo Key present: ${Boolean(brevoApiKey)} | Resend Key present: ${Boolean(resendApiKey)}`);
 
   // 1. Resend HTTP API (Runs over HTTPS port 443 - Bypasses Render Free Tier SMTP port block)
@@ -270,8 +283,16 @@ export async function sendOtpEmail({
 
   // 2. Brevo HTTP API (Runs over HTTPS port 443 - Bypasses Render Free Tier SMTP port block)
   if (brevoApiKey) {
+    const sender = getBrevoSender();
+    if (!sender || !sender.email) {
+      console.error("❌ [EMAIL ERROR] BREVO_SENDER_EMAIL is not configured.");
+      return {
+        success: false,
+        error: "Failed to deliver verification code: BREVO_SENDER_EMAIL is not configured. Please ensure BREVO_SENDER_EMAIL is added to your Render Environment Variables.",
+      };
+    }
+
     try {
-      const sender = getBrevoSender();
       const res = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
         headers: {
@@ -280,7 +301,7 @@ export async function sendOtpEmail({
           Accept: "application/json",
         },
         body: JSON.stringify({
-          sender: { name: sender.name, email: sender.email },
+          sender: sender.name ? { name: sender.name, email: sender.email } : { email: sender.email },
           to: [{ email: to }],
           subject,
           htmlContent: html,
