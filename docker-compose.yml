@@ -44,6 +44,9 @@ services:
       - SMTP_USER=${SMTP_USER:-}
       - SMTP_PASS=${SMTP_PASS:-}
       - SMTP_FROM=${SMTP_FROM:-}
+      - BREVO_API_KEY=${BREVO_API_KEY:-}
+      - BREVO_SENDER=${BREVO_SENDER:-}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
