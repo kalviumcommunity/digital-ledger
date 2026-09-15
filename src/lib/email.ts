@@ -1,13 +1,3 @@
-import dns from "node:dns";
-import nodemailer, { type Transporter } from "nodemailer";
-
-// Prioritize IPv4 across the Node.js runtime to eliminate ENETUNREACH on IPv6-lacking hosts
-try {
-  dns.setDefaultResultOrder("ipv4first");
-} catch {
-  // Ignored in runtimes that don't support setDefaultResultOrder
-}
-
 export interface SendOtpEmailParams {
   to: string;
   otp: string;
@@ -19,8 +9,6 @@ export interface SendOtpEmailResult {
   error?: string;
   previewUrl?: string | false;
 }
-
-let cachedTransporter: Transporter | null = null;
 
 export function getCleanEnv(name: string): string | undefined {
   if (typeof process === "undefined" || !process.env) return undefined;
@@ -94,101 +82,6 @@ export function isEmailConfigured(): boolean {
 
 // Backward compatibility alias
 export const isSmtpConfigured = isEmailConfigured;
-
-async function resolveIpv4Host(hostname: string): Promise<string> {
-  try {
-    const addresses = await dns.promises.resolve4(hostname);
-    if (addresses && addresses.length > 0) {
-      return addresses[0];
-    }
-  } catch {
-    // Fallback to hostname if DNS resolve4 fails
-  }
-  return hostname;
-}
-
-async function getTransporter(): Promise<{ transporter: Transporter; isConfigured: boolean }> {
-  if (cachedTransporter) {
-    return { transporter: cachedTransporter, isConfigured: isEmailConfigured() };
-  }
-
-  const user = (process.env.GMAIL_USER || process.env.SMTP_USER || "").trim();
-  // Strip whitespace from App Passwords (Google App Passwords often come as 4 groups of 4 chars: "abcd efgh ijkl mnop")
-  const pass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "").replace(/\s+/g, "");
-  const service = process.env.SMTP_SERVICE;
-  const host = process.env.SMTP_HOST;
-  const port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : 587;
-
-  // 1. Gmail configuration (either GMAIL_USER/GMAIL_APP_PASSWORD, or SMTP_SERVICE="gmail", or @gmail.com)
-  if (user && pass && (process.env.GMAIL_USER || service === "gmail" || user.endsWith("@gmail.com"))) {
-    const resolvedHost = await resolveIpv4Host("smtp.gmail.com");
-    const timeoutMs = process.env.RENDER ? 2500 : 4000;
-    cachedTransporter = nodemailer.createTransport({
-      host: resolvedHost,
-      port: 587,
-      secure: false, // STARTTLS
-      requireTLS: true,
-      auth: {
-        user,
-        pass,
-      },
-      tls: {
-        servername: "smtp.gmail.com",
-        rejectUnauthorized: false,
-      },
-      connectionTimeout: timeoutMs,
-      greetingTimeout: timeoutMs,
-      socketTimeout: timeoutMs,
-    } as any);
-    return { transporter: cachedTransporter, isConfigured: true };
-  }
-
-  // 2. Custom SMTP host configuration
-  if (host && user && pass) {
-    const resolvedHost = await resolveIpv4Host(host);
-    const timeoutMs = process.env.RENDER ? 2500 : 4000;
-    cachedTransporter = nodemailer.createTransport({
-      host: resolvedHost,
-      port,
-      secure: port === 465,
-      auth: { user, pass },
-      tls: {
-        servername: host,
-        rejectUnauthorized: false,
-      },
-      connectionTimeout: timeoutMs,
-      greetingTimeout: timeoutMs,
-      socketTimeout: timeoutMs,
-    } as any);
-    return { transporter: cachedTransporter, isConfigured: true };
-  }
-
-  // 3. Automated Test environment fallback ONLY if explicitly allowed
-  if (process.env.ALLOW_DEV_EMAIL_FALLBACK === "true" || process.env.NODE_ENV === "test") {
-    try {
-      const testAccount = await nodemailer.createTestAccount();
-      cachedTransporter = nodemailer.createTransport({
-        host: testAccount.smtp.host,
-        port: testAccount.smtp.port,
-        secure: testAccount.smtp.secure,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
-        },
-      });
-      return { transporter: cachedTransporter, isConfigured: false };
-    } catch {
-      cachedTransporter = nodemailer.createTransport({
-        jsonTransport: true,
-      });
-      return { transporter: cachedTransporter, isConfigured: false };
-    }
-  }
-
-  throw new Error(
-    "Gmail/SMTP email delivery is not configured. Please set GMAIL_USER and GMAIL_APP_PASSWORD in your .env file."
-  );
-}
 
 export async function sendOtpEmail({
   to,
@@ -368,51 +261,16 @@ export async function sendOtpEmail({
     }
   }
 
-  // 3. SMTP / Gmail transport (Works locally and on hosts allowing outbound SMTP)
-  const user = process.env.GMAIL_USER || process.env.SMTP_USER;
-  const fromAddress =
-    process.env.SMTP_FROM ||
-    (user ? `"KhataBook" <${user}>` : '"KhataBook Security" <security@khatabook.local>');
-
-  try {
-    const { transporter, isConfigured } = await getTransporter();
-    let info;
-    try {
-      info = await transporter.sendMail({
-        from: fromAddress,
-        to,
-        subject,
-        text: `${title}\n\n${message}\n\nYour 6-digit OTP: ${otp}\n\nThis code expires in 10 minutes.\n\nNever share this code with anyone.`,
-        html,
-      });
-    } catch (primaryErr) {
-      throw primaryErr;
-    }
-
-    if (isConfigured) {
-      console.log(`✅ [GMAIL/SMTP DELIVERED] Email successfully sent to ${to} (Message ID: ${info.messageId})`);
-    } else {
-      const previewUrl = nodemailer.getTestMessageUrl(info);
-      if (previewUrl) {
-        console.log(`🔗 Test Account URL (Fallback): ${previewUrl}`);
-      }
-    }
-
+  // 3. Fallback for Automated Local Integration Tests ONLY
+  if (process.env.ALLOW_DEV_EMAIL_FALLBACK === "true" || process.env.NODE_ENV === "test") {
+    console.log(`🧪 [TEST ENVIRONMENT] Simulated email delivery for ${to}`);
     return { success: true };
-  } catch (err: unknown) {
-    const errorMessage = err instanceof Error ? err.message : String(err);
-    console.error(`❌ [EMAIL DISPATCH ERROR] Failed to send email to ${to}:`, errorMessage);
-
-    if (errorMessage.includes("timeout") || errorMessage.includes("ENETUNREACH") || errorMessage.includes("ECONNREFUSED")) {
-      return {
-        success: false,
-        error: `Failed to deliver verification email: Outbound SMTP ports (587/465) are blocked by Render Free Tier. To send real OTP emails on Render, please add a free BREVO_API_KEY (from brevo.com) or RESEND_API_KEY in your Render Environment Variables.`,
-      };
-    }
-
-    return {
-      success: false,
-      error: `Failed to deliver verification code to your email: ${errorMessage}`,
-    };
   }
+
+  // 4. Missing API key error - No SMTP ports attempted
+  console.error("❌ [EMAIL ERROR] No HTTPS Email API configured. BREVO_API_KEY is required.");
+  return {
+    success: false,
+    error: "Failed to deliver verification code: BREVO_API_KEY is not configured. Please ensure BREVO_API_KEY is added to your Render Environment Variables.",
+  };
 }
