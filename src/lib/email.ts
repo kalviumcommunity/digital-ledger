@@ -70,63 +70,55 @@ export function getCleanEnv(name: string): string | undefined {
 }
 
 export function getBrevoApiKey(): string | undefined {
-  const staticVal = process.env.BREVO_API_KEY;
-  if (staticVal && typeof staticVal === "string" && staticVal.trim()) {
-    return staticVal.trim().replace(/^["']|["']$/g, "");
+  const direct = process.env.BREVO_API_KEY;
+  if (direct && typeof direct === "string" && direct.trim()) {
+    return direct.trim().replace(/^["']|["']$/g, "");
   }
 
-  const direct = getCleanEnv("BREVO_API_KEY");
-  if (direct) return direct;
-
-  if (typeof process !== "undefined" && process.env) {
-    // Search by value format (all Brevo keys start with xkeysib-)
-    for (const [k, v] of Object.entries(process.env)) {
-      if (typeof v === "string" && v.trim().startsWith("xkeysib-")) {
-        console.log(`[BREVO AUTO-DETECT] Found Brevo API key under env var '${k}'`);
-        return v.trim().replace(/^["']|["']$/g, "");
-      }
-    }
-
-    // Search by key name containing BREVO
-    for (const [k, v] of Object.entries(process.env)) {
-      if (k.toUpperCase().includes("BREVO") && k.toUpperCase().includes("KEY") && typeof v === "string" && v.trim()) {
-        return v.trim().replace(/^["']|["']$/g, "");
-      }
-    }
-  }
+  const clean = getCleanEnv("BREVO_API_KEY");
+  if (clean) return clean;
 
   return undefined;
 }
 
 export function getResendApiKey(): string | undefined {
-  const staticVal = process.env.RESEND_API_KEY;
-  if (staticVal && typeof staticVal === "string" && staticVal.trim()) {
-    return staticVal.trim().replace(/^["']|["']$/g, "");
+  const direct = process.env.RESEND_API_KEY;
+  if (direct && typeof direct === "string" && direct.trim()) {
+    return direct.trim().replace(/^["']|["']$/g, "");
   }
 
-  const direct = getCleanEnv("RESEND_API_KEY");
-  if (direct) return direct;
-  if (typeof process === "undefined" || !process.env) return undefined;
+  const clean = getCleanEnv("RESEND_API_KEY");
+  if (clean) return clean;
 
-  for (const [k, v] of Object.entries(process.env)) {
-    if (typeof v === "string" && v.trim().startsWith("re_")) {
-      return v.trim().replace(/^["']|["']$/g, "");
-    }
-  }
   return undefined;
 }
 
-export function getBrevoSender(): string {
-  const direct = getCleanEnv("BREVO_SENDER");
-  if (direct && direct.includes("@") && !direct.toLowerCase().endsWith("@gmail.com")) {
-    return direct;
+export function getBrevoSender(): { email: string; name: string } {
+  let email = process.env.BREVO_SENDER_EMAIL?.trim() || getCleanEnv("BREVO_SENDER_EMAIL");
+  let name = process.env.BREVO_SENDER_NAME?.trim() || getCleanEnv("BREVO_SENDER_NAME");
+
+  // Backwards compatibility for BREVO_SENDER (handles "TallyHo <tallyh29@gmail.com>" or "tallyh29@gmail.com")
+  if (!email) {
+    const rawSender = process.env.BREVO_SENDER?.trim() || getCleanEnv("BREVO_SENDER");
+    if (rawSender) {
+      const match = rawSender.match(/^(?:["']?([^<"']+)["']?\s*)?<([^>]+)>$/);
+      if (match) {
+        if (!name && match[1]?.trim()) name = match[1].trim();
+        email = match[2]?.trim();
+      } else if (rawSender.includes("@")) {
+        email = rawSender.replace(/^["']|["']$/g, "");
+      }
+    }
   }
-  // Brevo verified domain for this account prevents DMARC block
-  return "tallyh29@12152549.brevosend.com";
+
+  return {
+    email: (email || "tallyh29@gmail.com").replace(/^["']|["']$/g, ""),
+    name: (name || "TallyHo").replace(/^["']|["']$/g, ""),
+  };
 }
 
 export function isEmailConfigured(): boolean {
-  return true;
+  return Boolean(process.env.BREVO_API_KEY || process.env.RESEND_API_KEY);
 }
 
 // Backward compatibility alias
@@ -238,6 +230,8 @@ export async function sendOtpEmail({
   const resendApiKey = getResendApiKey();
   const brevoApiKey = getBrevoApiKey();
 
+  console.log(`[EMAIL CONFIG] Brevo API key configured: ${Boolean(process.env.BREVO_API_KEY)}`);
+  console.log(`[EMAIL CONFIG] Brevo sender configured: ${Boolean(process.env.BREVO_SENDER_EMAIL || process.env.BREVO_SENDER)}`);
   console.log(`[EMAIL DISPATCH] Brevo Key present: ${Boolean(brevoApiKey)} | Resend Key present: ${Boolean(resendApiKey)}`);
 
   // 1. Resend HTTP API (Runs over HTTPS port 443 - Bypasses Render Free Tier SMTP port block)
@@ -277,8 +271,7 @@ export async function sendOtpEmail({
   // 2. Brevo HTTP API (Runs over HTTPS port 443 - Bypasses Render Free Tier SMTP port block)
   if (brevoApiKey) {
     try {
-      const senderEmail = getBrevoSender();
-      const senderName = getCleanEnv("BREVO_SENDER_NAME") || "KhataBook";
+      const sender = getBrevoSender();
       const res = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
         headers: {
@@ -287,7 +280,7 @@ export async function sendOtpEmail({
           Accept: "application/json",
         },
         body: JSON.stringify({
-          sender: { name: senderName, email: senderEmail },
+          sender: { name: sender.name, email: sender.email },
           to: [{ email: to }],
           subject,
           htmlContent: html,
