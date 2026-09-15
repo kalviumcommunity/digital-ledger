@@ -61,6 +61,7 @@ async function getTransporter(): Promise<{ transporter: Transporter; isConfigure
   // 1. Gmail configuration (either GMAIL_USER/GMAIL_APP_PASSWORD, or SMTP_SERVICE="gmail", or @gmail.com)
   if (user && pass && (process.env.GMAIL_USER || service === "gmail" || user.endsWith("@gmail.com"))) {
     const resolvedHost = await resolveIpv4Host("smtp.gmail.com");
+    const timeoutMs = process.env.RENDER ? 2500 : 4000;
     cachedTransporter = nodemailer.createTransport({
       host: resolvedHost,
       port: 587,
@@ -74,9 +75,9 @@ async function getTransporter(): Promise<{ transporter: Transporter; isConfigure
         servername: "smtp.gmail.com",
         rejectUnauthorized: false,
       },
-      connectionTimeout: 4000,
-      greetingTimeout: 4000,
-      socketTimeout: 4000,
+      connectionTimeout: timeoutMs,
+      greetingTimeout: timeoutMs,
+      socketTimeout: timeoutMs,
     } as any);
     return { transporter: cachedTransporter, isConfigured: true };
   }
@@ -84,6 +85,7 @@ async function getTransporter(): Promise<{ transporter: Transporter; isConfigure
   // 2. Custom SMTP host configuration
   if (host && user && pass) {
     const resolvedHost = await resolveIpv4Host(host);
+    const timeoutMs = process.env.RENDER ? 2500 : 4000;
     cachedTransporter = nodemailer.createTransport({
       host: resolvedHost,
       port,
@@ -93,9 +95,9 @@ async function getTransporter(): Promise<{ transporter: Transporter; isConfigure
         servername: host,
         rejectUnauthorized: false,
       },
-      connectionTimeout: 4000,
-      greetingTimeout: 4000,
-      socketTimeout: 4000,
+      connectionTimeout: timeoutMs,
+      greetingTimeout: timeoutMs,
+      socketTimeout: timeoutMs,
     } as any);
     return { transporter: cachedTransporter, isConfigured: true };
   }
@@ -320,7 +322,6 @@ export async function sendOtpEmail({
         html,
       });
     } catch (primaryErr) {
-      const errMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
       throw primaryErr;
     }
 
