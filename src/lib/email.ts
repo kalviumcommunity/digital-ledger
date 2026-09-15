@@ -10,8 +10,26 @@ export interface SendOtpEmailResult {
   previewUrl?: string | false;
 }
 
+import fs from "node:fs";
+
 export function getCleanEnv(name: string): string | undefined {
   if (typeof process === "undefined" || !process.env) return undefined;
+
+  // Direct static lookup for known keys so Next.js bundler never drops them
+  if (name === "BREVO_API_KEY") {
+    const val = process.env.BREVO_API_KEY;
+    if (val && typeof val === "string" && val.trim()) return val.trim().replace(/^["']|["']$/g, "");
+  }
+  if (name === "BREVO_SENDER") {
+    const val = process.env.BREVO_SENDER;
+    if (val && typeof val === "string" && val.trim()) return val.trim().replace(/^["']|["']$/g, "");
+  }
+  if (name === "RESEND_API_KEY") {
+    const val = process.env.RESEND_API_KEY;
+    if (val && typeof val === "string" && val.trim()) return val.trim().replace(/^["']|["']$/g, "");
+  }
+
+  // Dynamic lookup
   const raw = process.env[name];
   if (raw && typeof raw === "string" && raw.trim()) {
     return raw.trim().replace(/^["']|["']$/g, "");
@@ -25,32 +43,67 @@ export function getCleanEnv(name: string): string | undefined {
       }
     }
   }
+
+  // Check secret files (Render Secret Files mount at /etc/secrets)
+  try {
+    const secretPath = `/etc/secrets/${name}`;
+    if (fs.existsSync(secretPath)) {
+      const secretVal = fs.readFileSync(secretPath, "utf-8").trim();
+      if (secretVal) return secretVal.replace(/^["']|["']$/g, "");
+    }
+    const envSecret = `/etc/secrets/.env`;
+    if (fs.existsSync(envSecret)) {
+      const content = fs.readFileSync(envSecret, "utf-8");
+      for (const line of content.split("\n")) {
+        const [k, ...rest] = line.split("=");
+        if (k && k.trim().toUpperCase() === target) {
+          const v = rest.join("=").trim().replace(/^["']|["']$/g, "");
+          if (v) return v;
+        }
+      }
+    }
+  } catch {
+    // Non-blocking file fallback
+  }
+
   return undefined;
 }
 
 export function getBrevoApiKey(): string | undefined {
+  const staticVal = process.env.BREVO_API_KEY;
+  if (staticVal && typeof staticVal === "string" && staticVal.trim()) {
+    return staticVal.trim().replace(/^["']|["']$/g, "");
+  }
+
   const direct = getCleanEnv("BREVO_API_KEY");
   if (direct) return direct;
-  if (typeof process === "undefined" || !process.env) return undefined;
 
-  // Search by value format (all Brevo keys start with xkeysib-)
-  for (const [k, v] of Object.entries(process.env)) {
-    if (typeof v === "string" && v.trim().startsWith("xkeysib-")) {
-      console.log(`[BREVO AUTO-DETECT] Found Brevo API key under env var '${k}'`);
-      return v.trim().replace(/^["']|["']$/g, "");
+  if (typeof process !== "undefined" && process.env) {
+    // Search by value format (all Brevo keys start with xkeysib-)
+    for (const [k, v] of Object.entries(process.env)) {
+      if (typeof v === "string" && v.trim().startsWith("xkeysib-")) {
+        console.log(`[BREVO AUTO-DETECT] Found Brevo API key under env var '${k}'`);
+        return v.trim().replace(/^["']|["']$/g, "");
+      }
+    }
+
+    // Search by key name containing BREVO
+    for (const [k, v] of Object.entries(process.env)) {
+      if (k.toUpperCase().includes("BREVO") && k.toUpperCase().includes("KEY") && typeof v === "string" && v.trim()) {
+        return v.trim().replace(/^["']|["']$/g, "");
+      }
     }
   }
 
-  // Search by key name containing BREVO
-  for (const [k, v] of Object.entries(process.env)) {
-    if (k.toUpperCase().includes("BREVO") && k.toUpperCase().includes("KEY") && typeof v === "string" && v.trim()) {
-      return v.trim().replace(/^["']|["']$/g, "");
-    }
-  }
   return undefined;
 }
 
 export function getResendApiKey(): string | undefined {
+  const staticVal = process.env.RESEND_API_KEY;
+  if (staticVal && typeof staticVal === "string" && staticVal.trim()) {
+    return staticVal.trim().replace(/^["']|["']$/g, "");
+  }
+
   const direct = getCleanEnv("RESEND_API_KEY");
   if (direct) return direct;
   if (typeof process === "undefined" || !process.env) return undefined;
@@ -65,15 +118,11 @@ export function getResendApiKey(): string | undefined {
 
 export function getBrevoSender(): string {
   const direct = getCleanEnv("BREVO_SENDER");
-  if (direct) return direct;
-  if (typeof process === "undefined" || !process.env) return "tallyh29@gmail.com";
-
-  for (const [k, v] of Object.entries(process.env)) {
-    if (k.toUpperCase().includes("BREVO") && k.toUpperCase().includes("SENDER") && typeof v === "string" && v.trim()) {
-      return v.trim().replace(/^["']|["']$/g, "");
-    }
+  if (direct && direct.includes("@") && !direct.toLowerCase().endsWith("@gmail.com")) {
+    return direct;
   }
-  return getCleanEnv("GMAIL_USER") || getCleanEnv("SMTP_USER") || "tallyh29@gmail.com";
+  // Brevo verified domain for this account prevents DMARC block
+  return "tallyh29@12152549.brevosend.com";
 }
 
 export function isEmailConfigured(): boolean {
