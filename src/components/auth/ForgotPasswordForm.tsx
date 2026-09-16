@@ -1,5 +1,25 @@
 "use client";
 
+/**
+ * ============================================================================
+ * FORGOT PASSWORD FORM (MULTI-STEP OTP STATE MACHINE)
+ * ============================================================================
+ * 
+ * HOW THE CLIENT-SERVER PASSWORD RESET FLOW OPERATES:
+ * 1. Step 1 (REQUEST):
+ *    - The user enters their registered account email address.
+ *    - `handleRequestOtp()` calls the server action `requestPasswordResetOtp(email)`.
+ *    - On the backend, an ephemeral 6-digit OTP is recorded in the `OtpVerification`
+ *      table with a 10-minute expiry time, and dispatched via Brevo's HTTPS email API.
+ *    - The UI smoothly transitions to the `RESET` step and begins a 30-second resend cooldown.
+ * 2. Step 2 (RESET):
+ *    - The user enters the 6-digit code and their desired new password.
+ *    - `handleResetPassword()` calls `resetPasswordWithOtp()`.
+ *    - The server validates that the OTP has not expired, hashes the new password using scrypt,
+ *      updates the user record, deletes the consumed OTP, and returns success.
+ *    - The client displays a success screen with a direct link back to login.
+ */
+
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, BookOpenText, CheckCircle2, ChevronLeft, KeyRound, Loader2, Mail, RefreshCw } from "lucide-react";

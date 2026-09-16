@@ -1,5 +1,26 @@
 "use server";
 
+/**
+ * ============================================================================
+ * CUSTOMER LEDGER & TRANSACTION MUTATION ACTIONS
+ * ============================================================================
+ * 
+ * CORE FINANCIAL INVARIANTS & INTEGRITY:
+ * 1. Double-Entry Running Balance: The ledger's `totalBalance` represents the
+ *    net receivable amount (Credit Given - Payments Received). Whenever a
+ *    transaction is added, edited, or deleted, the running balance is updated
+ *    inside a strict PostgreSQL transaction (`prisma.$transaction`).
+ * 2. Concurrency Control: To prevent two staff members from simultaneously
+ *    editing the same record, rows utilize:
+ *    - An active edit lock window (2 minutes).
+ *    - An integer `version` field for optimistic locking.
+ * 3. Immutable Audit Trail: Financial records are never physically destroyed.
+ *    Deletions are soft (`isDeleted: true`), and every change generates a
+ *    tamper-evident `AuditLog` record containing before & after JSON snapshots.
+ * 4. Cache Invalidation: Calls `revalidatePath(...)` after mutations so Next.js
+ *    refreshes server-rendered HTML pages automatically.
+ */
+
 import { Prisma, ActionType, TransactionType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";

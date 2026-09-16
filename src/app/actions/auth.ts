@@ -1,5 +1,20 @@
 "use server";
 
+/**
+ * ============================================================================
+ * AUTHENTICATION SERVER ACTIONS (BACKEND MUTATION LAYER)
+ * ============================================================================
+ * 
+ * HOW THE FRONTEND TALKS TO THE BACKEND HERE:
+ * 1. Next.js Server Actions (`"use server"`) act as type-safe Remote Procedure
+ *    Calls (RPC). A React component running in the browser (e.g., `LoginForm.tsx`)
+ *    can directly import and call `login({ email, password })`.
+ * 2. Behind the scenes, Next.js generates an internal POST request with serialized
+ *    arguments, executes this server-side code in Node.js, and returns the result.
+ * 3. Security Advantage: Sensitive logic (hashing passwords, issuing JWT cookies,
+ *    emailing OTPs, connecting to Prisma database) never leaks to the client bundle.
+ */
+
 import { prisma } from "@/lib/prisma";
 import {
   createSession,

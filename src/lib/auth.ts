@@ -1,3 +1,21 @@
+/**
+ * ============================================================================
+ * AUTHENTICATION & CREDENTIAL SECURITY SERVICE
+ * ============================================================================
+ * 
+ * HOW BACKEND & FRONTEND AUTHENTICATE SECURELY:
+ * 1. Password Security: Passwords are NEVER stored in plaintext. We use Node.js
+ *    native `scrypt` with a cryptographically random 16-byte salt to derive
+ *    a 64-byte key. Scrypt is resistant to hardware-accelerated (GPU/ASIC) attacks.
+ * 2. Timing-Attack Defense: Password checks use `timingSafeEqual`, which compares
+ *    byte-by-byte in constant time regardless of where mismatches occur.
+ * 3. Session Persistence: Upon login, `createSession()` signs an encrypted JWT
+ *    and writes an HTTP-Only, Secure, SameSite=Lax cookie directly to the browser.
+ * 4. Request Memoization: `getCurrentUser()` wraps database lookups in React `cache()`,
+ *    meaning multiple components rendering during the same HTTP request share the
+ *    exact same user record without redundant database queries.
+ */
+
 import { promisify } from "node:util";
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
 import { cache } from "react";
@@ -38,12 +56,19 @@ function hashedPasswordParts(stored: string): { salt: Buffer; hash: Buffer } | n
   return { salt: Buffer.from(parts[1], "hex"), hash: Buffer.from(parts[2], "hex") };
 }
 
+/**
+ * Hashes a plaintext password using scrypt with a new random salt.
+ * Output format: scrypt:<salt_hex>:<hash_hex>
+ */
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(SALT_BYTES);
   const derived = (await scrypt(password, salt, KEY_BYTES)) as Buffer;
   return `${PASSWORD_PREFIX}:${salt.toString("hex")}:${derived.toString("hex")}`;
 }
 
+/**
+ * Verifies a plaintext candidate password against a stored scrypt hash using timingSafeEqual.
+ */
 export async function verifyPassword(
   password: string,
   stored: string

@@ -1,5 +1,25 @@
 "use client";
 
+/**
+ * ============================================================================
+ * CUSTOMERS DIRECTORY (REACT CLIENT COMPONENT)
+ * ============================================================================
+ * 
+ * HOW THE FRONTEND DISPLAYS AND MANAGES CUSTOMERS:
+ * 1. Financial Overview Cards:
+ *    Displays aggregate metrics calculated on the server:
+ *    - Total Net Receivable (Total credit given minus total paid across all customers).
+ *    - Total Customers count.
+ *    - Number of customers who currently owe money (in debt).
+ * 2. Instant Search & Pagination:
+ *    The search bar updates URL search parameters via `router.push()`, triggering
+ *    Next.js server-side re-fetching of filtered customer cards.
+ * 3. Customer Creation Workflow:
+ *    Toggling `showAddModal` opens the `AddCustomerModal`. Submitting triggers
+ *    the `createCustomer()` server action which creates both the Customer and
+ *    their Ledger in PostgreSQL, then automatically refreshes the directory.
+ */
+
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
