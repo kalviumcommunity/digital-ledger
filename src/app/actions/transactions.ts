@@ -1,5 +1,22 @@
 "use server";
 
+/**
+ * ============================================================================
+ * GLOBAL TRANSACTIONS SERVER ACTIONS (CROSS-CUSTOMER FEED)
+ * ============================================================================
+ * 
+ * HOW THE BACKEND POWERS THE TRANSACTIONS DASHBOARD:
+ * 1. Multi-Tenant Scoping: To prevent Shopkeeper A from seeing Shopkeeper B's
+ *    data, every database query strictly joins through `ledger.customer.userId = user.id`.
+ * 2. Efficient Aggregation: When the user filters or changes pages, we execute
+ *    a batched `prisma.$transaction` combining:
+ *    - `count({ where })` for total matching records (pagination math).
+ *    - `findMany({ where, skip, take })` for the slice of rows to display.
+ *    - `groupBy({ by: ['type'], _sum: { amount: true } })` for real-time totals.
+ * 3. Serialization: Prisma Decimal objects are converted to JavaScript numbers
+ *    and formatted to 2 decimal places before crossing the server-client boundary.
+ */
+
 import { Prisma, type TransactionType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";

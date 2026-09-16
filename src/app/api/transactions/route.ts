@@ -1,3 +1,22 @@
+/**
+ * ============================================================================
+ * REST API ROUTE: /api/transactions
+ * ============================================================================
+ * 
+ * WHY A REST API LAYER IN ADDITION TO SERVER ACTIONS?
+ * 1. Server Actions are designed for internal Next.js React components.
+ * 2. REST API endpoints (`/api/*`) provide an open, standardized HTTP interface
+ *    for external systems, mobile apps, postman, automated testing suites,
+ *    and third-party integrations.
+ * 
+ * REQUEST EXECUTION PIPELINE (POST /api/transactions):
+ * 1. Authenticate Request: Validates bearer tokens or cookies.
+ * 2. Parse JSON: Catches malformed JSON payloads early.
+ * 3. Validate Schema: Checks amounts (>0), types (CREDIT/DEBIT), dates, and notes.
+ * 4. Verify Ownership: Confirms the target customer ledger belongs to the caller.
+ * 5. Atomic Insertion: Writes the transaction and updates ledger running totals.
+ */
+
 import { NextRequest } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
 import {

@@ -1,5 +1,22 @@
 "use client";
 
+/**
+ * ============================================================================
+ * LOGIN FORM (REACT CLIENT COMPONENT)
+ * ============================================================================
+ * 
+ * HOW THE CLIENT AUTHENTICATES WITH THE SERVER:
+ * 1. Controlled Inputs: React state tracks `email` and `password` with live validation.
+ * 2. Asynchronous Server Action Call:
+ *    On form submit, `handleSubmit()` invokes `login({ email, password })`.
+ * 3. Server Execution:
+ *    The server action hashes the candidate password, compares it using timing-safe
+ *    scrypt verification, creates an encrypted JWT session, and sets the HTTP cookie.
+ * 4. Seamless Redirection:
+ *    If authentication succeeds, `window.location.href` redirects the user back
+ *    to their originally requested URL (`from`) or defaults to `/transactions`.
+ */
+
 import React, { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";

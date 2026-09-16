@@ -1,3 +1,19 @@
+/**
+ * ============================================================================
+ * TRANSACTIONAL EMAIL SERVICE (HTTPS API DELIVERY)
+ * ============================================================================
+ * 
+ * WHY HTTPS APIS INSTEAD OF DIRECT SMTP?
+ * 1. Cloud host providers (like Render, AWS EC2, DigitalOcean) block outbound
+ *    SMTP traffic on ports 25, 465, and 587 by default to prevent spam botnets.
+ * 2. Traditional Nodemailer SMTP attempts will hang until connection timeout (ETIMEDOUT).
+ * 3. Solution: We route all transactional emails (OTPs, password resets) via
+ *    standard HTTPS calls (Port 443) to Brevo's REST API (`https://api.brevo.com/v3/smtp/email`)
+ *    or Resend's REST API (`https://api.resend.com/emails`).
+ * 4. This guarantees instant, reliable email delivery across any cloud container,
+ *    serverless lambda, or local development environment without port blocking.
+ */
+
 export interface SendOtpEmailParams {
   to: string;
   otp: string;

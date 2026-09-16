@@ -1,5 +1,20 @@
 "use server";
 
+/**
+ * ============================================================================
+ * CUSTOMERS DIRECTORY SERVER ACTIONS
+ * ============================================================================
+ * 
+ * HOW THE BACKEND MANAGES CUSTOMERS:
+ * 1. 1-to-1 Ledger Initialization: A customer cannot exist without a financial
+ *    ledger. Whenever `createCustomer()` is called, Prisma creates both the
+ *    `Customer` and its corresponding `Ledger` atomically in one SQL transaction.
+ * 2. Balance Summaries: `computeTotals()` derives the customer's lifetime
+ *    credit given, payments collected, net amount due, and timestamp of last activity.
+ * 3. Search & Pagination: Supports case-insensitive name filtering and paginated
+ *    grids designed for quick mobile browsing in the shopkeeper UI.
+ */
+
 import { Prisma, type Ledger } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";

@@ -1,5 +1,27 @@
 "use client";
 
+/**
+ * ============================================================================
+ * TRANSACTIONS DASHBOARD (REACT CLIENT COMPONENT)
+ * ============================================================================
+ * 
+ * HOW THE FRONTEND & BACKEND WORK TOGETHER HERE:
+ * 1. Server-Side Pre-rendering & Hydration:
+ *    The parent page (`app/transactions/page.tsx`) is a React Server Component.
+ *    It queries Prisma on the server and passes `initialData` (transactions,
+ *    pagination counts, aggregate financial metrics) into this client component.
+ *    This gives users instantaneous initial page loads with zero layout shifts.
+ * 2. URL-Driven State Synchronization:
+ *    Filter states (search text, credit/debit toggles, date ranges, page numbers)
+ *    are synchronized directly into the browser URL query string via `router.push()`.
+ *    This allows users to bookmark searches, refresh the page, or use the browser's
+ *    back/forward buttons without losing their active filter criteria.
+ * 3. Client-Side Export:
+ *    Clicking "Export CSV" calls the server action `exportTransactionsCsv()`,
+ *    which generates standard RFC-compliant CSV text on the server and streams
+ *    it to the browser for instant client-side file saving.
+ */
+
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
