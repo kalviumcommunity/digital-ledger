@@ -4,10 +4,17 @@ A full-stack, enterprise-grade digital ledger platform designed for businesses t
 
 🌐 **Live Production Deployment:** [https://digital-ledger-tu7k.onrender.com](https://digital-ledger-tu7k.onrender.com)
 
+📚 **Engineering & Product Documentation:**
+- [📋 Product Requirements Document (PRD)](docs/PRD.md)
+- [🏛️ High-Level Design (HLD)](docs/HLD.md)
+- [⚙️ Low-Level Design (LLD)](docs/LLD.md)
+- [🔌 Transactions API Contract](docs/api-contract-transactions.md)
+
 ---
 
 ## Table of Contents
 
+- [System Documentation (PRD, HLD, LLD)](#system-documentation)
 - [Overview & Architecture](#overview--architecture)
 - [Core Feature Modules](#core-feature-modules)
   - [Module 1: Authentication & Customer Directory](#module-1-authentication--customer-directory)
@@ -24,6 +31,19 @@ A full-stack, enterprise-grade digital ledger platform designed for businesses t
   - [Manual Local Development](#manual-local-development)
 - [Testing & Quality Assurance](#testing--quality-assurance)
 - [Demo Credentials](#demo-credentials)
+
+---
+
+## System Documentation
+
+Comprehensive architecture, requirements, and design specifications are maintained in the [`docs/`](docs/) directory:
+
+| Document | Purpose | File Link |
+| :--- | :--- | :--- |
+| **Product Requirements Document (PRD)** | Problem statement, user personas, functional/non-functional requirements, user journeys, acceptance criteria | [docs/PRD.md](docs/PRD.md) |
+| **High-Level Design (HLD)** | System architecture diagram, layered decomposition, sequence flows, security architecture, deployment topology | [docs/HLD.md](docs/HLD.md) |
+| **Low-Level Design (LLD)** | Entity-relationship (ER) diagrams, mathematical invariants, module specifications, locking state machine, API contracts | [docs/LLD.md](docs/LLD.md) |
+| **API Contract** | Detailed REST schema documentation for transaction endpoints | [docs/api-contract-transactions.md](docs/api-contract-transactions.md) |
 
 ---
 
