@@ -81,6 +81,9 @@ graph TD
 - **React Server Components (RSC):** Render server-side with zero client JavaScript overhead. Pages like `app/transactions/page.tsx` fetch data directly via Prisma and stream pre-rendered HTML to the user with `initialData`.
 - **React Client Components (`"use client"`):** Handle dynamic interactive state (filtering, modals, search query debouncing, CSV downloading, OTP timers).
 - **URL-Synchronized State:** Search filters, date ranges, and pagination parameters are mirrored into the browser's URL search parameters (`?search=foo&page=2`), allowing browser history, bookmarks, and refresh operations to maintain state.
+- **Frontend JavaScript Design Patterns:**
+  - **Closures (`src/lib/frontend/closures.ts`):** Encapsulates private state (e.g. debounced `timerId`, sliding window `callTimestamps`, and ledger state `runningBalance`) within lexical scopes, protecting internal variables from global or component pollution.
+  - **Promises vs Callbacks (`src/lib/frontend/asyncPatterns.ts`):** Demonstrates and contrasts classic error-first asynchronous callbacks `(err, res)` with modern ES6+ Promises and `async/await`, including a higher-order `promisify` utility that converts callback APIs into Promises.
 
 ### 2.3 Application Layer: Server Actions vs REST API
 The application intentionally maintains two interfaces into the domain model:

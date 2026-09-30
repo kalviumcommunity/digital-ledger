@@ -20,7 +20,7 @@
  *    their Ledger in PostgreSQL, then automatically refreshes the directory.
  */
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -38,6 +38,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { AddCustomerModal } from "@/components/customers/AddCustomerModal";
 import { formatINR, formatDate } from "@/lib/format";
 import type { CurrentUser, CustomersResult } from "@/lib/types";
+import { createDebounce } from "@/lib/frontend/closures";
 
 interface CustomersDirectoryProps {
   initialData: CustomersResult;
@@ -55,6 +56,21 @@ export function CustomersDirectory({
   const router = useRouter();
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState(search);
+
+  // JAVASCRIPT CONCEPT: CLOSURE
+  // createDebounce encapsulates the timerId variable inside its private lexical scope.
+  const debouncedSearch = useMemo(
+    () =>
+      createDebounce((val: string) => {
+        goToPage(1, val);
+      }, 450),
+    []
+  );
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    debouncedSearch(val);
+  };
 
   const { customers, pagination, aggregate } = initialData;
   const totalPages = pagination.totalPages;
@@ -138,7 +154,7 @@ export function CustomersDirectory({
                 type="text"
                 placeholder="Search customers…"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="pl-9 pr-4 py-2 text-sm rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 w-full sm:w-64"
               />
             </form>

@@ -187,6 +187,37 @@ verifyAndConsumeOtp(email: string, otp: string, type: "SIGNUP" | "FORGOT_PASSWOR
 - **TTL Window:** 10 minutes (`new Date(Date.now() + 10 * 60 * 1000)`).
 - **Consumption:** Once validated, the row is deleted immediately (`prisma.otpVerification.deleteMany(...)`) to prevent replay attacks.
 
+### 4.4 Frontend Closures Architecture (`src/lib/frontend/closures.ts`)
+```typescript
+// 1. Debounce via Closure
+createDebounce<T>(fn: T, delayMs: number): DebouncedFunction<T>
+// Encloses `timerId` in private lexical scope. Each call resets the enclosed timerId.
+
+// 2. Action Rate Limiter via Closure
+createRateLimiter(maxCalls: number, windowMs: number): RateLimiter
+// Encloses private `callTimestamps` array. Inaccessible from outside; limits action frequency.
+
+// 3. Encapsulated State Accumulator via Closure
+createBalanceCalculator(initialBalance?: number): BalanceCalculator
+// Encloses `runningBalance` and `txCount` in private scope; modified exclusively via returned methods.
+```
+
+### 4.5 Asynchronous Patterns: Promises vs Callbacks (`src/lib/frontend/asyncPatterns.ts`)
+```typescript
+// 1. Traditional Error-First Callback Pattern
+generateReceiptWithCallback(data: TransactionSummaryData, callback: (err: Error | null, res?: FormattedReceipt) => void): void
+
+// 2. Modern ES6+ Promise Pattern
+generateReceiptWithPromise(data: TransactionSummaryData): Promise<FormattedReceipt>
+
+// 3. Higher-Order Promisification Converter
+promisify<T, A>(fn: (arg: A, cb: ErrorFirstCallback<T>) => void): (arg: A) => Promise<T>
+```
+**Comparative Invariants:**
+- **Callbacks:** Explicit error parameter convention `(err, result)`. Prone to callback nesting and inversion of control.
+- **Promises:** Unifies asynchronous lifecycles into a first-class state machine (`pending` $\rightarrow$ `fulfilled` | `rejected`), enabling `.then()`, `.catch()`, and `async/await`.
+- **Promisification:** Wraps callback APIs into `new Promise((resolve, reject) => fn(arg, (err, res) => err ? reject(err) : resolve(res)))`.
+
 ---
 
 ## 5. API Interface Contract Specifications

@@ -47,6 +47,28 @@ Comprehensive architecture, requirements, and design specifications are maintain
 
 ---
 
+## Core Frontend JavaScript Concepts
+
+This project implements and tests key frontend JavaScript paradigms required for production web applications and internship evaluation criteria:
+
+### 1. JavaScript — Closures (`src/lib/frontend/closures.ts`)
+- **What it does:** Uses lexical scope bundling to encapsulate private state that persists across function calls without leaking into global or component state.
+- **Implementations:**
+  - `createDebounce(fn, delayMs)`: Encloses a private `timerId` to group high-frequency input events (used in live search on `TransactionsDashboard.tsx` and `CustomersDirectory.tsx`).
+  - `createRateLimiter(maxCalls, windowMs)`: Encloses a private `callTimestamps` array to rate-limit user actions (used to throttle OTP resend attempts on `ForgotPasswordForm.tsx`).
+  - `createBalanceCalculator(initialBalance)`: Encloses private running ledger state (`runningBalance`, `txCount`) accessible only via inner closure methods.
+- **Verification:** Unit tests in `test/frontend-concepts.test.ts` (12 assertions covering encapsulation, state mutation, and isolation).
+
+### 2. JavaScript — Promises vs Callbacks (`src/lib/frontend/asyncPatterns.ts`)
+- **What it does:** Demonstrates and compares asynchronous patterns in frontend execution:
+  - **Error-First Callback Pattern:** `generateReceiptWithCallback(data, (err, res) => ...)` using Node/browser standard convention.
+  - **Modern Promise Pattern:** `generateReceiptWithPromise(data)` returning an ES6+ Promise consumable via `.then().catch()` or `async/await`.
+  - **Promisification Adapter:** `promisify(callbackFn)` higher-order function that converts callback APIs into native Promises using `new Promise((resolve, reject) => ...)`.
+- **UI Integration:** Click the **Receipt** button on any row in the [Transactions Dashboard](src/components/transactions/TransactionsDashboard.tsx) to execute and view dual async receipt generation.
+- **Verification:** Unit tests in `test/frontend-concepts.test.ts` (8 assertions covering callback error-first flow, Promise resolution/rejection, and Promisify conversion).
+
+---
+
 ## Overview & Architecture
 
 KhataBook replaces manual paper record-keeping with an automated, synchronized digital ledger. It provides shop owners and staff members with real-time balance tracking, credit risk monitoring, and detailed audit logs of every financial modification.

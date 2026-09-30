@@ -22,7 +22,7 @@
  *    it to the browser for instant client-side file saving.
  */
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -35,11 +35,19 @@ import {
   Layers,
   Wallet,
   X,
+  FileText,
+  CheckCircle2,
 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { exportTransactionsCsv } from "@/app/actions/transactions";
 import { formatDateTime, formatINR } from "@/lib/format";
 import type { CurrentUser, GlobalTransactionsResult } from "@/lib/types";
+import { createDebounce } from "@/lib/frontend/closures";
+import {
+  generateReceiptWithPromise,
+  generateReceiptWithCallback,
+  type FormattedReceipt,
+} from "@/lib/frontend/asyncPatterns";
 
 export interface DashboardFilters {
   search: string;
@@ -68,6 +76,69 @@ export function TransactionsDashboard({
   const [dateTo, setDateTo] = useState(filters.dateTo);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [selectedReceipt, setSelectedReceipt] = useState<{
+    promiseReceipt: FormattedReceipt;
+    callbackReceipt: FormattedReceipt;
+  } | null>(null);
+  const [generatingReceiptId, setGeneratingReceiptId] = useState<string | null>(null);
+
+  // ==========================================================================
+  // JAVASCRIPT CONCEPT 1: CLOSURES IN FRONTEND
+  // ==========================================================================
+  // `createDebounce` returns an inner function that encloses `timerId` in its lexical scope.
+  // The enclosed `timerId` persists across typing events without polluting global state.
+  const debouncedAutoSearch = useMemo(
+    () =>
+      createDebounce((term: string) => {
+        navigate(1, { search: term });
+      }, 500),
+    []
+  );
+
+  const handleSearchChange = (val: string) => {
+    setSearchQuery(val);
+    debouncedAutoSearch(val);
+  };
+
+  // ==========================================================================
+  // JAVASCRIPT CONCEPT 2: PROMISES VS CALLBACKS IN FRONTEND
+  // ==========================================================================
+  // Demonstrates both asynchronous patterns handling transaction receipt formatting:
+  // 1. generateReceiptWithPromise: Modern ES6+ Promise consumed with async/await.
+  // 2. generateReceiptWithCallback: Traditional error-first callback (err, result).
+  const handleGenerateReceipt = async (tx: typeof transactions[0]) => {
+    setGeneratingReceiptId(tx.id);
+    try {
+      const payload = {
+        customerName: tx.customerName,
+        amount: tx.amount,
+        type: tx.type,
+        method: tx.method,
+        timestamp: tx.createdAt,
+      };
+
+      // Execution Pattern A: Modern Promise via async/await
+      const promiseReceipt = await generateReceiptWithPromise(payload);
+
+      // Execution Pattern B: Traditional Error-First Callback
+      generateReceiptWithCallback(payload, (err, callbackReceipt) => {
+        if (err) {
+          console.error("Callback execution error:", err);
+          return;
+        }
+        if (callbackReceipt) {
+          setSelectedReceipt({
+            promiseReceipt,
+            callbackReceipt,
+          });
+        }
+      });
+    } catch (err) {
+      console.error("Promise execution error:", err);
+    } finally {
+      setGeneratingReceiptId(null);
+    }
+  };
 
   const { transactions, pagination, analytics } = initialData;
 
@@ -250,7 +321,7 @@ export function TransactionsDashboard({
                 type="text"
                 placeholder="e.g. Aarav"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
               />
             </div>
@@ -392,14 +463,26 @@ export function TransactionsDashboard({
                       </p>
                     </div>
                   </div>
-                  <p
-                    className={`text-sm font-bold tabular-nums shrink-0 ${
-                      tx.type === "CREDIT" ? "text-rose-600" : "text-emerald-600"
-                    }`}
-                  >
-                    {tx.type === "CREDIT" ? "+" : "−"}
-                    {formatINR(tx.amount)}
-                  </p>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateReceipt(tx)}
+                      disabled={generatingReceiptId === tx.id}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition active:scale-95 disabled:opacity-50"
+                      title="Demonstrates JavaScript Promises vs Callbacks by generating an itemized receipt"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-slate-400" />
+                      {generatingReceiptId === tx.id ? "Generating..." : "Receipt"}
+                    </button>
+                    <p
+                      className={`text-sm font-bold tabular-nums shrink-0 ${
+                        tx.type === "CREDIT" ? "text-rose-600" : "text-emerald-600"
+                      }`}
+                    >
+                      {tx.type === "CREDIT" ? "+" : "−"}
+                      {formatINR(tx.amount)}
+                    </p>
+                  </div>
                 </div>
               ))}
             </div>
@@ -455,6 +538,94 @@ export function TransactionsDashboard({
             </div>
           )}
         </div>
+
+        {/* Modal: Demonstrating Promises vs Callbacks in Action */}
+        {selectedReceipt && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-2xl max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-150">
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">
+                      {selectedReceipt.promiseReceipt.title}
+                    </h3>
+                    <p className="text-xs text-slate-500 font-mono">
+                      {selectedReceipt.promiseReceipt.receiptId}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedReceipt(null)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">Amount</span>
+                    <span className="font-bold text-base text-slate-900">
+                      {selectedReceipt.promiseReceipt.formattedAmount}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">Details</span>
+                    <span className="font-medium text-slate-700">
+                      {selectedReceipt.promiseReceipt.summaryText}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">Timestamp</span>
+                    <span className="text-slate-600 font-mono text-[11px]">
+                      {new Date(selectedReceipt.promiseReceipt.generatedAt).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Educational Concept Comparison Box */}
+                <div className="p-4 rounded-2xl border border-blue-100 bg-blue-50/40 space-y-2 text-xs">
+                  <div className="flex items-center gap-2 text-blue-900 font-bold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Dual Async Execution Verified</span>
+                  </div>
+                  <p className="text-slate-600 leading-relaxed text-[11px]">
+                    This receipt was asynchronously processed through both JavaScript patterns simultaneously:
+                  </p>
+                  <ul className="space-y-1 text-[11px] text-slate-700 pl-4 list-disc">
+                    <li>
+                      <strong>Promise Pattern:</strong> Resolved asynchronously via{" "}
+                      <code className="text-blue-700 bg-blue-100/60 px-1 py-0.5 rounded font-mono">
+                        await generateReceiptWithPromise()
+                      </code>
+                    </li>
+                    <li>
+                      <strong>Callback Pattern:</strong> Handled using Node-style error-first callback{" "}
+                      <code className="text-blue-700 bg-blue-100/60 px-1 py-0.5 rounded font-mono">
+                        (err, res) =&gt; void
+                      </code>
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50/70 border-t border-slate-100 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedReceipt(null)}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition active:scale-95"
+                >
+                  Close Receipt
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
