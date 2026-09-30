@@ -22,9 +22,10 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpenText, CheckCircle2, ChevronLeft, KeyRound, Loader2, Mail, RefreshCw } from "lucide-react";
+import { ArrowLeft, BookOpenText, CheckCircle2, ChevronLeft, KeyRound, Loader2, Mail, RefreshCw, ShieldAlert } from "lucide-react";
 import { PasswordInput } from "@/components/auth/PasswordInput";
 import { requestPasswordResetOtp, resetPasswordWithOtp } from "@/app/actions/auth";
+import { createRateLimiter } from "@/lib/frontend/closures";
 
 export function ForgotPasswordForm() {
   const [step, setStep] = useState<"REQUEST" | "RESET">("REQUEST");
@@ -38,6 +39,12 @@ export function ForgotPasswordForm() {
   const [pending, setPending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
 
+  // JAVASCRIPT CONCEPT: CLOSURE
+  // createRateLimiter encloses private callTimestamps inside its lexical scope.
+  // Neither component re-renders nor outside callers can tamper with the rate limiter history.
+  // Limits OTP requests to at most 3 attempts per 60-second sliding window.
+  const [otpRateLimiter] = useState(() => createRateLimiter(3, 60000));
+
   useEffect(() => {
     if (resendCooldown <= 0) return;
     const interval = setInterval(() => {
@@ -50,6 +57,14 @@ export function ForgotPasswordForm() {
     e.preventDefault();
     setError(null);
     setInfo(null);
+
+    // Closure-based rate limit evaluation:
+    if (!otpRateLimiter.tryExecute()) {
+      const waitSec = Math.ceil(otpRateLimiter.getRemainingCooldownMs() / 1000);
+      setError(`Too many attempts. Rate limit applied by security policy. Please wait ${waitSec}s.`);
+      return;
+    }
+
     setPending(true);
     try {
       const result = await requestPasswordResetOtp(email);
@@ -72,6 +87,14 @@ export function ForgotPasswordForm() {
     if (resendCooldown > 0 || pending) return;
     setError(null);
     setInfo(null);
+
+    // Closure-based rate limit evaluation:
+    if (!otpRateLimiter.tryExecute()) {
+      const waitSec = Math.ceil(otpRateLimiter.getRemainingCooldownMs() / 1000);
+      setError(`Too many requests. Please wait ${waitSec}s before requesting another verification code.`);
+      return;
+    }
+
     setPending(true);
 
     try {
